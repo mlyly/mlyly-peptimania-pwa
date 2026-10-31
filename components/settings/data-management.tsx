@@ -39,6 +39,7 @@ import {
     wipeAllLocalData,
     writeImportedPayload,
 } from "@/lib/db";
+import {invalidateSettings} from "@/lib/settings";
 
 // ---------------------------------------------------------------------------
 // Shared bits
@@ -133,6 +134,7 @@ const EXPORT_TABLES: { key: keyof ExportStats; label: string }[] = [
     {key: "doseLogs", label: "Dose logs"},
     {key: "measurementTypes", label: "Measurement types"},
     {key: "measurementLogs", label: "Measurement logs"},
+    {key: "settings", label: "App settings"},
 ];
 
 function ExportCard({refreshSignal}: { refreshSignal: number }) {
@@ -400,9 +402,12 @@ function ImportCard({onImported}: { onImported: () => void }) {
         setFeedback({kind: "busy", message: "Writing data…"});
         try {
             await writeImportedPayload(state.payload, mode);
+            // Settings rows may have been replaced — refresh the shared
+            // snapshot so chart controls show the imported values.
+            await invalidateSettings();
             const {counts} = summarizePayload(state.payload);
             const total = counts.medications + counts.schedules + counts.doseLogs +
-                counts.measurementTypes + counts.measurementLogs;
+                counts.measurementTypes + counts.measurementLogs + counts.settings;
             setFeedback({
                 kind: "success",
                 message: mode === "replace"
@@ -498,7 +503,8 @@ function ImportCard({onImported}: { onImported: () => void }) {
                                 {summary.counts.schedules} schedules ·{" "}
                                 {summary.counts.doseLogs} dose logs ·{" "}
                                 {summary.counts.measurementTypes} measurement types ·{" "}
-                                {summary.counts.measurementLogs} measurement logs
+                                {summary.counts.measurementLogs} measurement logs ·{" "}
+                                {summary.counts.settings} settings
                             </div>
                         </div>
 

@@ -64,10 +64,19 @@ To handle future app updates without breaking user data:
 > COA links and notes. Totals are always derived from the lots; the v5 → v6 migration folds
 > the legacy inventory into one synthetic lot.
 >
-> **v7 (current):** each lot gains an optional `pricePerContainer` (USD per vial/container,
+> **v7:** each lot gains an optional `pricePerContainer` (USD per vial/container,
 > not per content unit). Lot value = `vialCount × pricePerContainer`; medication value = the
 > sum of priced lots (unpriced lots are excluded). Additive, so the v6 → v7 migration is a
 > no-op.
+>
+> **v8 (current):** a new `settings` store holds application-configuration
+> entries — one `{key, value}` row per toggleable feature setting (chart time
+> range, chart display unit, hidden medications on the concentration chart).
+> Value shapes are declared and validated per key by
+> `lib/settings/definitions.ts`; a missing or invalid entry falls back to the
+> app default, and unknown keys are ignored (forward compatible). Settings are
+> part of the export/import payload (`data.settings`; absent in pre-v8
+> payloads ≡ empty). Additive — the v7 → v8 migration only creates the store.
 
 ```ts
 type MassUnit = "mg" | "mcg" | "IU";

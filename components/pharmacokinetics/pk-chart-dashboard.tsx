@@ -6,6 +6,7 @@ import {AlertCircle, ChartSpline, Clock3, Info, Pill, RefreshCw, Sparkles, Trian
 
 import type {Medication} from "@/lib/db/types";
 import {buildPkConcentrationSeries, type PkResult} from "@/lib/pharmacokinetics";
+import {useAppSettings} from "@/lib/settings";
 import {
     buildConcentrationChartRows,
     chartRangeById,
@@ -79,14 +80,20 @@ const instantLabel = new Intl.DateTimeFormat(undefined, {
  * Interactive concentration dashboard (AGENTS.md §4.2/§5): time-range presets,
  * per-medication multi-select and a display-unit toggle over the local PK
  * engine. Everything is computed in memory from the local database.
+ *
+ * The controls are *configurable features*: the chosen range, display unit
+ * and hidden medications persist as `settings` entries (schema v8) and are
+ * restored on every visit via `useAppSettings`.
  */
 export function PkChartDashboard() {
     const {phase, data, reload} = useTrackerData();
+    const {settings, setSetting} = useAppSettings();
 
-    const [rangeId, setRangeId] = React.useState<ChartRangeId>("week");
-    const [unit, setUnit] = React.useState<ConcentrationDisplayUnit>("mcg");
-    const [deselectedIds, setDeselectedIds] = React.useState<Set<string>>(
-        () => new Set()
+    const rangeId = settings["pk.chartRange"];
+    const unit = settings["pk.chartUnit"];
+    const deselectedIds = React.useMemo(
+        () => new Set(settings["pk.hiddenMedicationIds"]),
+        [settings]
     );
     const [now, setNow] = React.useState<Date>(() => new Date());
     const [refreshing, setRefreshing] = React.useState(false);
@@ -240,26 +247,45 @@ export function PkChartDashboard() {
         return {topPeak, combinedNow, logged, scheduled};
     }, [result, nowMs, unit]);
 
+    const setRange = React.useCallback(
+        (id: ChartRangeId) => void setSetting("pk.chartRange", id),
+        [setSetting]
+    );
+
+    const setDisplayUnit = React.useCallback(
+        (next: ConcentrationDisplayUnit) => void setSetting("pk.chartUnit", next),
+        [setSetting]
+    );
+
     const toggleMedication = React.useCallback(
         (medicationId: string) => {
             if (!availableIds.has(medicationId)) return;
-            setDeselectedIds((current) => {
-                const next = new Set(current);
-                if (next.has(medicationId)) next.delete(medicationId);
-                else next.add(medicationId);
-                return next;
-            });
+            const current = new Set(settings["pk.hiddenMedicationIds"]);
+            if (current.has(medicationId)) current.delete(medicationId);
+            else current.add(medicationId);
+            // Forget ids of medications that no longer exist.
+            const known = new Set(data.medications.map((medication) => medication.id));
+            void setSetting(
+                "pk.hiddenMedicationIds",
+                [...current].filter((id) => known.has(id))
+            );
         },
-        [availableIds]
+        [availableIds, data.medications, setSetting, settings]
     );
 
-    const selectAll = React.useCallback(() => {
-        setDeselectedIds(new Set());
-    }, []);
+    const selectAll = React.useCallback(
+        () => void setSetting("pk.hiddenMedicationIds", []),
+        [setSetting]
+    );
 
-    const clearSelection = React.useCallback(() => {
-        setDeselectedIds(new Set(availableMedications.map((m) => m.id)));
-    }, [availableMedications]);
+    const clearSelection = React.useCallback(
+        () =>
+            void setSetting(
+                "pk.hiddenMedicationIds",
+                availableMedications.map((medication) => medication.id)
+            ),
+        [availableMedications, setSetting]
+    );
 
     const refresh = React.useCallback(async () => {
         setRefreshing(true);
@@ -329,9 +355,9 @@ export function PkChartDashboard() {
                 <CardContent className="py-4">
                     <PkChartControls
                         rangeId={rangeId}
-                        onRangeChange={setRangeId}
+                        onRangeChange={setRange}
                         unit={unit}
-                        onUnitChange={setUnit}
+                        onUnitChange={setDisplayUnit}
                         medications={data.medications}
                         availableIds={availableIds}
                         selectedIds={selectedIds}

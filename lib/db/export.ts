@@ -17,6 +17,8 @@ interface ExportData {
     doseLogs: unknown[];
     measurementTypes: unknown[];
     measurementLogs: unknown[];
+    /** v8: app configuration entries (missing in pre-v8 payloads). */
+    settings?: unknown[];
 }
 
 export interface ExportPayload {
@@ -70,13 +72,14 @@ export async function canonicalChecksum(data: unknown): Promise<string> {
 
 /** Reads every domain table into a plain snapshot object. */
 export async function snapshotDatabase(): Promise<DatabaseSnapshot> {
-    const [medications, schedules, doseLogs, measurementTypes, measurementLogs] =
+    const [medications, schedules, doseLogs, measurementTypes, measurementLogs, settings] =
         await Promise.all([
             db.medications.toArray(),
             db.schedules.toArray(),
             db.doseLogs.toArray(),
             db.measurementTypes.toArray(),
             db.measurementLogs.toArray(),
+            db.settings.toArray(),
         ]);
     return {
         schemaVersion: LATEST_SCHEMA_VERSION,
@@ -85,6 +88,7 @@ export async function snapshotDatabase(): Promise<DatabaseSnapshot> {
         doseLogs,
         measurementTypes,
         measurementLogs,
+        settings,
     };
 }
 
@@ -103,6 +107,7 @@ export async function buildExportPayload(): Promise<ExportPayload> {
             doseLogs: data.doseLogs,
             measurementTypes: data.measurementTypes,
             measurementLogs: data.measurementLogs,
+            settings: data.settings,
         },
         checksum,
     };
@@ -180,6 +185,7 @@ export async function writeImportedPayload(
         [db.doseLogs, payload.data.doseLogs],
         [db.measurementTypes, payload.data.measurementTypes],
         [db.measurementLogs, payload.data.measurementLogs],
+        [db.settings, payload.data.settings ?? []],
     ];
 
     await db.transaction("rw", tables.map(([table]) => table), async () => {
@@ -199,18 +205,20 @@ export interface ExportStats {
     doseLogs: number;
     measurementTypes: number;
     measurementLogs: number;
+    settings: number;
 }
 
 export async function getExportStats(): Promise<ExportStats> {
-    const [medications, schedules, doseLogs, measurementTypes, measurementLogs] =
+    const [medications, schedules, doseLogs, measurementTypes, measurementLogs, settings] =
         await Promise.all([
             db.medications.count(),
             db.schedules.count(),
             db.doseLogs.count(),
             db.measurementTypes.count(),
             db.measurementLogs.count(),
+            db.settings.count(),
         ]);
-    return {medications, schedules, doseLogs, measurementTypes, measurementLogs};
+    return {medications, schedules, doseLogs, measurementTypes, measurementLogs, settings};
 }
 
 export interface ImportSummary {
@@ -231,6 +239,7 @@ export function summarizePayload(payload: ExportPayload): ImportSummary {
             doseLogs: (payload.data.doseLogs ?? []).length,
             measurementTypes: (payload.data.measurementTypes ?? []).length,
             measurementLogs: (payload.data.measurementLogs ?? []).length,
+            settings: (payload.data.settings ?? []).length,
         },
     };
 }

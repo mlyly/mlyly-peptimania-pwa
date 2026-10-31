@@ -4,7 +4,7 @@
  *
  *   npx tsx scripts/medications-smoke.ts
  *
- * Exercises: the v1 → v7 data migration (legacy type remap + inventory lot
+ * Exercises: the v1 → v8 data migration (legacy type remap + inventory lot
  * folding + snapshot twin), service CRUD (zod-validated, PUT semantics),
  * multi-lot inventory adjustments, lot pricing, delete cascade, and the
  * reconstitution / stock derived math.
@@ -78,11 +78,11 @@ async function expectError(label: string, fn: () => Promise<unknown>) {
 const now = new Date().toISOString();
 
 async function main() {
-    // ------------------------------------------------------------ v7
+    // ------------------------------------------------------------ v8
     const result = await ensureDatabase();
     check(
-        "fresh database stamps schema v7",
-        result.to === LATEST_SCHEMA_VERSION && LATEST_SCHEMA_VERSION === 7,
+        "fresh database stamps schema v8",
+        result.to === LATEST_SCHEMA_VERSION && LATEST_SCHEMA_VERSION === 8,
         `got ${result.to}`
     );
 
@@ -137,10 +137,10 @@ async function main() {
     const afterMigration = await db.medications.toArray();
     const byId = new Map(afterMigration.map((m) => [m.id, m]));
     check(
-        "migration reports v1 → v7",
+        "migration reports v1 → v8",
         migrated.from === 1 &&
-        migrated.to === 7 &&
-        migrated.applied.join() === "2,3,4,5,6,7",
+        migrated.to === 8 &&
+        migrated.applied.join() === "2,3,4,5,6,7,8",
         `got ${migrated.from} → ${migrated.to} (${migrated.applied.join()})`
     );
     check(

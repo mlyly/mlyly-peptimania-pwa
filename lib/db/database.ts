@@ -1,7 +1,16 @@
 import Dexie, {type Table} from "dexie";
 
 import {SCHEMA_VERSIONS} from "./migrations";
-import type {BackupEntry, DoseLog, MeasurementLog, MeasurementType, Medication, MetaEntry, Schedule,} from "./types";
+import type {
+    AppSetting,
+    BackupEntry,
+    DoseLog,
+    MeasurementLog,
+    MeasurementType,
+    Medication,
+    MetaEntry,
+    Schedule,
+} from "./types";
 
 export const DATABASE_NAME = "peptimania";
 
@@ -11,6 +20,7 @@ export class PepDatabase extends Dexie {
     doseLogs!: Table<DoseLog, string>;
     measurementTypes!: Table<MeasurementType, string>;
     measurementLogs!: Table<MeasurementLog, string>;
+    settings!: Table<AppSetting, string>;
     meta!: Table<MetaEntry, string>;
     backups!: Table<BackupEntry, string>;
 

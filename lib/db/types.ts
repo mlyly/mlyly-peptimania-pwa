@@ -168,6 +168,18 @@ export interface MetaEntry {
     value: number;
 }
 
+/**
+ * v8: one application-configuration entry. Toggleable feature settings
+ * (chart time range, display unit, hidden medications, …) are stored here —
+ * one row per key, `value` is JSON-serializable data whose shape is defined
+ * and validated per key by `lib/settings/definitions.ts`. Absence of a row
+ * means "use the default"; unrecognized keys/values are ignored by the app.
+ */
+export interface AppSetting {
+    key: string;
+    value: unknown;
+}
+
 /** Automatic pre-migration snapshot written by the migration manager. */
 export interface BackupEntry {
     id: string;
@@ -187,4 +199,6 @@ export interface DatabaseSnapshot {
     doseLogs: DoseLog[];
     measurementTypes: MeasurementType[];
     measurementLogs: MeasurementLog[];
+    /** v8: app configuration entries (part of the user's local data). */
+    settings: AppSetting[];
 }

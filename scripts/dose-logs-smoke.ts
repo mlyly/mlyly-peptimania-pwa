@@ -335,11 +335,11 @@ async function main() {
         !longSite.success && longSite.error.issues.some((i) => i.path[0] === "siteDetail")
     );
 
-    // ============================================================ v3 → v7 migration
+    // ============================================================ v3 → v8 migration
     await ensureDatabase();
     check(
-        "fresh database stamps the current schema v7",
-        LATEST_SCHEMA_VERSION === 7 && (await ensureDatabase()).to === 7
+        "fresh database stamps the current schema v8",
+        LATEST_SCHEMA_VERSION === 8 && (await ensureDatabase()).to === 8
     );
 
     // Simulate a v3-era database: meta says 3, with a pre-v4 dose log
@@ -359,8 +359,8 @@ async function main() {
 
     const migrated = await runMigrations();
     check(
-        "runMigrations reports v3 → v7 (applies v4 + v5 + v6 + v7)",
-        migrated.from === 3 && migrated.to === 7 && migrated.applied.join() === "4,5,6,7",
+        "runMigrations reports v3 → v8 (applies v4 + v5 + v6 + v7 + v8)",
+        migrated.from === 3 && migrated.to === 8 && migrated.applied.join() === "4,5,6,7,8",
         `got ${migrated.from} → ${migrated.to} (${migrated.applied.join()})`
     );
     const survived = (await db.doseLogs.get("v3-log"))!;

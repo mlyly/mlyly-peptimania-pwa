@@ -30,7 +30,7 @@ export interface SchemaVersion {
     stores: Record<string, string>;
 }
 
-export const LATEST_SCHEMA_VERSION = 7;
+export const LATEST_SCHEMA_VERSION = 8;
 
 /**
  * Index declarations. Primary keys (`id`) are non-indexed UUIDs; other fields
@@ -97,6 +97,16 @@ export const SCHEMA_VERSIONS: SchemaVersion[] = [
         // additive and non-indexed, so no store map changes are needed.
         version: 7,
         stores: {},
+    },
+    {
+        // v8 adds the `settings` store: one `{key, value}` row per application
+        // configuration entry (toggleable feature settings such as the chart
+        // time range, display unit or hidden medications). Fresh rows are
+        // created lazily by `lib/settings`, so no data migration is needed.
+        version: 8,
+        stores: {
+            settings: "key",
+        },
     },
 ];
 
@@ -433,6 +443,23 @@ export const MIGRATIONS: Migration[] = [
         upSnapshot: () => {
             // Additive optional field: import payloads from older versions are
             // accepted as-is (absent `pricePerContainer` ≡ unpriced).
+        },
+    },
+    {
+        version: 8,
+        description:
+            "App configuration: new `settings` store holding one `{key, value}` " +
+            "row per toggleable feature setting (chart range, unit, hidden " +
+            "medications, …). The store starts empty — absent keys mean " +
+            "'default', so there is nothing to transform.",
+        up: () => {
+            // New empty store: nothing to transform on the live database.
+        },
+        upSnapshot: (data) => {
+            // Older payloads simply carry no settings; normalize the absence
+            // so the import path sees an empty list.
+            const snapshot = data as { settings?: unknown };
+            if (!Array.isArray(snapshot.settings)) snapshot.settings = [];
         },
     },
 ];
