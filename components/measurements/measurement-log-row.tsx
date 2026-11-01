@@ -1,11 +1,11 @@
 "use client";
 
 import * as React from "react";
-import {MoreHorizontal, NotebookPen, Pencil, Trash2} from "lucide-react";
+import {MoreHorizontal, Pencil, Trash2} from "lucide-react";
 
 import type {MeasurementLog, MeasurementType} from "@/lib/db/types";
 import {effectiveKind, formatStoredValue} from "@/lib/measurements/derived";
-import {formatClockTime} from "@/lib/scheduling/dates";
+import {formatDateTimeCompact} from "@/lib/scheduling/dates";
 
 import {Button} from "@/components/ui/button";
 import {Card} from "@/components/ui/card";
@@ -22,9 +22,8 @@ export interface MeasurementLogRowProps {
 }
 
 /**
- * One reading in the day-grouped history: value, clock time, notes and quick
- * actions. Mirrors the visual language of `DoseLogRow`, trimmed tighter since
- * body-metric rows are mostly number + time.
+ * One reading in the history — a compact single line: date + time, value,
+ * notes and quick actions.
  */
 export function MeasurementLogRow({
                                       log,
@@ -37,33 +36,27 @@ export function MeasurementLogRow({
     const valueText = formatStoredValue(log.value, effectiveKind(type), type?.unit ?? "");
 
     return (
-        <Card className="gap-2 py-2.5">
-            <div className="flex items-center justify-between gap-2 px-4">
-                <div className="flex min-w-0 items-center gap-2.5">
-                    <span className="min-w-0">
-                        <span className="text-sm leading-tight font-semibold tabular-nums">
-                            {valueText || type?.name || "Reading"}
-                        </span>
-                        <span
-                            className="text-muted-foreground ml-2 inline-flex items-center gap-1 text-xs tabular-nums">
-                            <NotebookPen className="size-3 shrink-0" aria-hidden/>
-                            {formatClockTime(time)}
-                        </span>
-                        {log.notes && (
-                            <span className="text-muted-foreground ml-2 max-w-64 truncate text-xs">
-                                {log.notes}
-                            </span>
-                        )}
+        <Card className="gap-0 py-1.5">
+            <div className="flex items-center gap-2 px-3">
+                <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
+                    {formatDateTimeCompact(time)}
+                </span>
+                <span className="text-sm leading-tight font-semibold tabular-nums">
+                    {valueText || type?.name || "Reading"}
+                </span>
+                {log.notes && (
+                    <span className="text-muted-foreground min-w-0 truncate text-xs">
+                        {log.notes}
                     </span>
-                </div>
+                )}
 
-                <div className="flex shrink-0 items-center gap-1.5">
+                <div className="ml-auto flex shrink-0 items-center">
                     <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                             <Button
                                 variant="ghost"
                                 size="icon"
-                                className="size-8"
+                                className="size-7"
                                 aria-label={`Actions for ${valueText || "this reading"}`}
                                 disabled={busy}
                             >

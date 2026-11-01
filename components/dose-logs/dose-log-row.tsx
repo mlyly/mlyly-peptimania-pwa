@@ -1,11 +1,11 @@
 "use client";
 
 import * as React from "react";
-import {CalendarCheck2, ClipboardList, MapPin, MoreHorizontal, Pencil, Trash2,} from "lucide-react";
+import {ClipboardList, MapPin, MoreHorizontal, Pencil, Trash2,} from "lucide-react";
 
 import type {DoseLog, Medication} from "@/lib/db/types";
 import {medicationTypeMeta} from "@/lib/medications/constants";
-import {formatClockTime} from "@/lib/scheduling/dates";
+import {formatDateTimeCompact} from "@/lib/scheduling/dates";
 import {formatAmount} from "@/lib/units";
 import {cn} from "@/lib/utils";
 
@@ -25,8 +25,8 @@ export interface DoseLogRowProps {
 }
 
 /**
- * One dose in the day-grouped history: what, how much, when, where (site)
- * and quick actions. Mirrors the visual language of `ScheduleRow`.
+ * One dose in the history — a compact single line: date + time, what and how
+ * much, then site / origin / notes and quick actions.
  */
 export function DoseLogRow({
                                log,
@@ -40,61 +40,53 @@ export function DoseLogRow({
     const fromSchedule = log.scheduleId !== undefined;
 
     return (
-        <Card className="gap-2 py-3">
-            <div className="flex items-center justify-between gap-2 px-4">
-                <div className="flex min-w-0 items-center gap-2.5">
-                    <span
-                        className={cn(
-                            "flex size-8 shrink-0 items-center justify-center rounded-md border",
-                            meta?.badgeClass ?? "border-border bg-muted text-muted-foreground"
-                        )}
-                    >
-                        {meta ? (
-                            <meta.icon className="size-4" aria-hidden/>
-                        ) : (
-                            <ClipboardList className="size-4" aria-hidden/>
-                        )}
+        <Card className="gap-0 py-1.5">
+            <div className="flex items-center gap-2 px-3">
+                <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
+                    {formatDateTimeCompact(time)}
+                </span>
+                <span
+                    className={cn(
+                        "flex size-6 shrink-0 items-center justify-center rounded-md border",
+                        meta?.badgeClass ?? "border-border bg-muted text-muted-foreground"
+                    )}
+                >
+                    {meta ? (
+                        <meta.icon className="size-3.5" aria-hidden/>
+                    ) : (
+                        <ClipboardList className="size-3.5" aria-hidden/>
+                    )}
+                </span>
+                <p className="min-w-0 truncate text-sm leading-tight font-semibold">
+                    {medication?.name ?? "Unknown medication"}
+                    <span className="text-muted-foreground font-normal">
+                        {" "}· {formatAmount(log.doseAmount, log.unit)}
                     </span>
-                    <div className="min-w-0">
-                        <p className="truncate text-sm leading-tight font-semibold">
-                            {medication?.name ?? "Unknown medication"}
-                            <span className="text-muted-foreground font-normal">
-                                {" "}
-                                · {formatAmount(log.doseAmount, log.unit)}
-                            </span>
-                        </p>
-                        <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                            <span className="text-muted-foreground inline-flex items-center gap-1 text-xs tabular-nums">
-                                <CalendarCheck2 className="size-3 shrink-0" aria-hidden/>
-                                {formatClockTime(time)}
-                            </span>
-                            {log.injectionSite && (
-                                <Badge variant="outline" className="px-1.5 py-0 text-[11px]">
-                                    <MapPin className="mr-1 size-3" aria-hidden/>
-                                    {log.injectionSite}
-                                </Badge>
-                            )}
-                            {fromSchedule && (
-                                <Badge variant="secondary" className="px-1.5 py-0 text-[11px]">
-                                    From schedule
-                                </Badge>
-                            )}
-                            {log.notes && (
-                                <span className="text-muted-foreground max-w-52 truncate text-xs">
-                                    {log.notes}
-                                </span>
-                            )}
-                        </div>
-                    </div>
-                </div>
+                </p>
+                {log.injectionSite && (
+                    <Badge variant="outline" className="shrink-0 px-1.5 py-0 text-[11px]">
+                        <MapPin className="mr-1 size-3" aria-hidden/>
+                        {log.injectionSite}
+                    </Badge>
+                )}
+                {fromSchedule && (
+                    <Badge variant="secondary" className="shrink-0 px-1.5 py-0 text-[11px]">
+                        From schedule
+                    </Badge>
+                )}
+                {log.notes && (
+                    <span className="text-muted-foreground min-w-0 truncate text-xs">
+                        {log.notes}
+                    </span>
+                )}
 
-                <div className="flex shrink-0 items-center gap-1.5">
+                <div className="ml-auto flex shrink-0 items-center">
                     <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                             <Button
                                 variant="ghost"
                                 size="icon"
-                                className="size-8"
+                                className="size-7"
                                 aria-label={`Actions for ${medication?.name ?? "this dose"}`}
                                 disabled={busy}
                             >

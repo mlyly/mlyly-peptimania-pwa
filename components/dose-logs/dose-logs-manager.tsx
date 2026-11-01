@@ -6,10 +6,11 @@ import {AlertCircle, ClipboardList, Plus, Search, SearchX,} from "lucide-react";
 
 import type {DoseLog} from "@/lib/db/types";
 import {storageAwareMessage} from "@/lib/db/quota";
-import {dateOnlyIso, formatRelativeDay, isSameLocalDay} from "@/lib/scheduling/dates";
 import {deleteDoseLog} from "@/lib/scheduling/service";
 
 import {ConfirmDialog} from "@/components/app/confirm-dialog";
+import {ListPager} from "@/components/app/list-pager";
+import {usePagedTable} from "@/components/app/use-paged-table";
 import {type Feedback, FeedbackLine} from "@/components/ui/feedback-line";
 import {Badge} from "@/components/ui/badge";
 import {Button} from "@/components/ui/button";
@@ -34,20 +35,15 @@ interface DeleteTarget {
     medicationName: string | null;
 }
 
-/** One local-day group in the history list (newest day first). */
-interface DayGroup {
-    day: Date;
-    logs: DoseLog[];
-}
-
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
 /**
- * Dose history surface: search/filter, a day-grouped list of every logged
- * dose (scheduled check-offs and one-offs) and the log/edit/delete dialogs.
- * Boots the local database via `useTrackerData` and reloads after each write.
+ * Dose history surface: search/filter, a paginated, compact one-line-per-dose
+ * list of every logged dose (scheduled check-offs and one-offs) and the
+ * log/edit/delete dialogs. Page size is stored per table in settings. Boots
+ * the local database via `useTrackerData` and reloads after each write.
  */
 export function DoseLogsManager() {
     const {phase, data, reload} = useTrackerData();
@@ -143,9 +139,9 @@ export function DoseLogsManager() {
         return {total: data.doseLogs.length, scheduled};
     }, [data.doseLogs]);
 
-    const groups = React.useMemo<DayGroup[]>(() => {
+    const visibleLogs = React.useMemo<DoseLog[]>(() => {
         const needle = query.trim().toLowerCase();
-        const visible = data.doseLogs.filter((log) => {
+        return data.doseLogs.filter((log) => {
             if (medicationFilter !== "all" && log.medicationId !== medicationFilter) {
                 return false;
             }
@@ -161,21 +157,10 @@ export function DoseLogsManager() {
                 .filter(Boolean)
                 .some((text) => text!.toLowerCase().includes(needle));
         });
-
-        // `listDoseLogs` returns newest first, so grouping in order yields
-        // newest day first; within a day the entries stay in log order.
-        const result: DayGroup[] = [];
-        for (const log of visible) {
-            const instant = new Date(log.timestamp);
-            const last = result[result.length - 1];
-            if (!last || !isSameLocalDay(instant, last.day)) {
-                result.push({day: instant, logs: [log]});
-            } else {
-                last.logs.push(log);
-            }
-        }
-        return result;
     }, [data.doseLogs, medications, query, medicationFilter, originFilter]);
+
+    const paged = usePagedTable("doseLogs", visibleLogs,
+        `${query}|${medicationFilter}|${originFilter}`);
 
     const hasMedications = data.medications.length > 0;
 
@@ -265,27 +250,33 @@ export function DoseLogsManager() {
                 )}
             </div>
 
-            {/* Day-grouped history */}
-            {groups.length > 0 ? (
-                <div className="flex flex-col gap-4">
-                    {groups.map((group) => (
-                        <section key={dateOnlyIso(group.day)} className="flex flex-col gap-2">
-                            <h2 className="text-muted-foreground px-1 text-xs font-medium tracking-wide uppercase">
-                                {formatRelativeDay(group.day)}
-                            </h2>
-                            <div className="flex flex-col gap-2">
-                                {group.logs.map((log) => (
-                                    <DoseLogRow
-                                        key={log.id}
-                                        log={log}
-                                        medication={medications.get(log.medicationId) ?? null}
-                                        onEdit={openEdit}
-                                        onDelete={requestDelete}
-                                        busy={busyId === log.id}
-                                    />
-                                ))}
-                            </div>
-                        </section>
+            {/* Pagination — page size persists per table in settings */}
+            {paged.showPager && (
+                <ListPager
+                    pageSize={paged.pageSize}
+                    onPageSizeChange={paged.setPageSize}
+                    page={paged.page}
+                    pageCount={paged.pageCount}
+                    onPageChange={paged.setPage}
+                    rangeStart={paged.rangeStart}
+                    rangeEnd={paged.rangeEnd}
+                    totalItems={paged.totalItems}
+                    itemNoun="doses"
+                />
+            )}
+
+            {/* Compact history — one line per dose, newest first */}
+            {paged.totalItems > 0 ? (
+                <div className="flex flex-col gap-1.5">
+                    {paged.items.map((log) => (
+                        <DoseLogRow
+                            key={log.id}
+                            log={log}
+                            medication={medications.get(log.medicationId) ?? null}
+                            onEdit={openEdit}
+                            onDelete={requestDelete}
+                            busy={busyId === log.id}
+                        />
                     ))}
                 </div>
             ) : data.doseLogs.length === 0 ? (

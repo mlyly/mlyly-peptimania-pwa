@@ -177,6 +177,20 @@ export function formatClockTime(date: Date): string {
     return timeFormatter.format(date);
 }
 
+const shortDateFormatter = new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+});
+
+/**
+ * Compact "date, time" for single-line history rows, year always included,
+ * e.g. "31 Oct 2026, 8:59 AM".
+ */
+export function formatDateTimeCompact(date: Date): string {
+    return `${shortDateFormatter.format(date)}, ${formatClockTime(date)}`;
+}
+
 /** Relative label for an upcoming day: "Today" / "Tomorrow" / "in 5 days" / "Oct 2". */
 export function formatRelativeDay(date: Date, now = new Date()): string {
     const difference = diffDays(now, date);

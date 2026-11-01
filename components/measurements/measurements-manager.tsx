@@ -18,11 +18,12 @@ import {
 } from "@/lib/measurements/derived";
 import {deleteMeasurementLog, deleteMeasurementType} from "@/lib/measurements/service";
 import {BUILTIN_MEASUREMENT_TYPES, isBuiltinMeasurementType, measurementTypeIcon,} from "@/lib/measurements/constants";
-import {dateOnlyIso, formatRelativeDay, isSameLocalDay} from "@/lib/scheduling/dates";
 import {formatNumber} from "@/lib/units";
 import {cn} from "@/lib/utils";
 
 import {ConfirmDialog} from "@/components/app/confirm-dialog";
+import {ListPager} from "@/components/app/list-pager";
+import {usePagedTable} from "@/components/app/use-paged-table";
 import {type Feedback, FeedbackLine} from "@/components/ui/feedback-line";
 import {Badge} from "@/components/ui/badge";
 import {Button} from "@/components/ui/button";
@@ -54,12 +55,6 @@ interface DeleteLogTarget {
 interface DeleteTypeTarget {
     type: MeasurementType;
     logCount: number;
-}
-
-/** One local-day group in the history list (newest day first). */
-interface DayGroup {
-    day: Date;
-    logs: MeasurementLog[];
 }
 
 // ---------------------------------------------------------------------------
@@ -142,7 +137,8 @@ function TrackerCard({
 /**
  * Body-metrics surface: tracker cards (Weight & Blood Pressure built in, any
  * custom unit you add), a trend chart with range toggle, summary stats and a
- * day-grouped history with inline add / edit / delete. Boots the local
+ * paginated, compact one-line-per-reading history with inline add / edit /
+ * delete. History page size is stored per table in settings. Boots the local
  * database via `useMeasurementsData` and reloads after each write.
  */
 export function MeasurementsManager() {
@@ -352,21 +348,13 @@ export function MeasurementsManager() {
         return meta;
     }, [data.types, data.logs]);
 
-    const groups = React.useMemo<DayGroup[]>(() => {
-        // `listMeasurementLogs` returns newest first, so grouping in order
-        // yields newest day first; within a day entries stay in log order.
-        const result: DayGroup[] = [];
-        for (const log of rangeLogs) {
-            const instant = new Date(log.timestamp);
-            const last = result[result.length - 1];
-            if (!last || !isSameLocalDay(instant, last.day)) {
-                result.push({day: instant, logs: [log]});
-            } else {
-                last.logs.push(log);
-            }
-        }
-        return result;
-    }, [rangeLogs]);
+    // Page the history list; page size persists per table in settings.
+    // Chart and summary stats always use the full in-range list.
+    const paged = usePagedTable(
+        "measurements",
+        rangeLogs,
+        `${selectedType?.id ?? ""}|${range}`
+    );
 
     const emptyHint = React.useMemo(() => {
         if (!selectedType) return "";
@@ -600,28 +588,34 @@ export function MeasurementsManager() {
                 </Card>
             )}
 
-            {/* Day-grouped history */}
-            {groups.length > 0 && (
-                <section className="flex flex-col gap-2">
+            {/* Compact history — one line per reading, newest first */}
+            {paged.totalItems > 0 && (
+                <section className="flex flex-col gap-1.5">
                     <h3 className="text-muted-foreground px-1 text-xs font-medium tracking-wide uppercase">
                         History
                     </h3>
-                    {groups.map((group) => (
-                        <div key={dateOnlyIso(group.day)} className="flex flex-col gap-2">
-                            <p className="text-muted-foreground px-1 text-xs font-medium">
-                                {formatRelativeDay(group.day)}
-                            </p>
-                            {group.logs.map((log) => (
-                                <MeasurementLogRow
-                                    key={log.id}
-                                    log={log}
-                                    type={typeIndex.get(log.measurementTypeId) ?? null}
-                                    onEdit={openEditLog}
-                                    onDelete={requestDeleteLog}
-                                    busy={busyId === log.id}
-                                />
-                            ))}
-                        </div>
+                    <div className="px-1">
+                        <ListPager
+                            pageSize={paged.pageSize}
+                            onPageSizeChange={paged.setPageSize}
+                            page={paged.page}
+                            pageCount={paged.pageCount}
+                            onPageChange={paged.setPage}
+                            rangeStart={paged.rangeStart}
+                            rangeEnd={paged.rangeEnd}
+                            totalItems={paged.totalItems}
+                            itemNoun="readings"
+                        />
+                    </div>
+                    {paged.items.map((log) => (
+                        <MeasurementLogRow
+                            key={log.id}
+                            log={log}
+                            type={typeIndex.get(log.measurementTypeId) ?? null}
+                            onEdit={openEditLog}
+                            onDelete={requestDeleteLog}
+                            busy={busyId === log.id}
+                        />
                     ))}
                 </section>
             )}

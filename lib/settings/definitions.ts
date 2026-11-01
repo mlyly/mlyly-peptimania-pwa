@@ -19,7 +19,22 @@ export type SettingKey =
     | "pk.chartRange"
     | "pk.chartUnit"
     | "pk.hiddenMedicationIds"
-    | "legal.termsAcceptedAt";
+    | "legal.termsAcceptedAt"
+    | "paging.pageSize";
+
+/** Selectable page sizes for paged lists; `"all"` disables pagination. */
+export type PageSize = 10 | 20 | 50 | 100 | "all";
+
+export const PAGE_SIZES: readonly PageSize[] = [10, 20, 50, 100, "all"];
+
+/** Lists that expose pagination; each id gets its own stored page size. */
+export type PagedTableId = "doseLogs" | "measurements";
+
+const PAGED_TABLE_IDS: readonly string[] = ["doseLogs", "measurements"];
+
+export function pageSizeLabel(size: PageSize): string {
+    return size === "all" ? "All" : `${size} / page`;
+}
 
 /** Typed view of every known setting, merged with its default. */
 export interface AppSettings {
@@ -33,6 +48,11 @@ export interface AppSettings {
      * accepted — the startup gate re-appears. Read via `lib/legal/terms.ts`.
      */
     "legal.termsAcceptedAt": string | null;
+    /**
+     * Page size per paged list, keyed by `PagedTableId`. A missing entry
+     * means the list uses its own default page size.
+     */
+    "paging.pageSize": Partial<Record<PagedTableId, PageSize>>;
 }
 
 const CHART_RANGE_IDS: readonly string[] = CHART_RANGES.map((range) => range.id);
@@ -43,6 +63,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     "pk.chartUnit": "mcg",
     "pk.hiddenMedicationIds": [],
     "legal.termsAcceptedAt": null,
+    "paging.pageSize": {},
 };
 
 interface SettingDefinition<K extends SettingKey = SettingKey> {
@@ -84,6 +105,26 @@ const definitions: { [K in SettingKey]: SettingDefinition<K> } = {
             if (typeof raw !== "string") return null;
             const time = Date.parse(raw);
             return Number.isFinite(time) ? new Date(time).toISOString() : null;
+        },
+    },
+    "paging.pageSize": {
+        key: "paging.pageSize",
+        description: "Page size chosen per paged list (10/20/50/100/all)",
+        parse: (raw) => {
+            const result: Partial<Record<PagedTableId, PageSize>> = {};
+            if (!raw || typeof raw !== "object" || Array.isArray(raw)) return result;
+            for (const [tableId, value] of Object.entries(raw)) {
+                if (!PAGED_TABLE_IDS.includes(tableId)) continue; // unknown list — ignore
+                const size: PageSize | undefined =
+                    value === "all"
+                        ? "all"
+                        : typeof value === "number" &&
+                        (PAGE_SIZES as readonly number[]).includes(value)
+                            ? (value as PageSize)
+                            : undefined;
+                if (size !== undefined) result[tableId as PagedTableId] = size;
+            }
+            return result;
         },
     },
 };

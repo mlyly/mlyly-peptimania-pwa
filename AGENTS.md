@@ -71,7 +71,8 @@ To handle future app updates without breaking user data:
 >
 > **v8 (current):** a new `settings` store holds application-configuration
 > entries — one `{key, value}` row per toggleable feature setting (chart time
-> range, chart display unit, hidden medications on the concentration chart)
+> range, chart display unit, hidden medications on the concentration chart,
+> per-table list page sizes)
 > plus the `legal.termsAcceptedAt` acknowledgement record shown by the startup
 > Terms gate (re-confirmed every 30 days; excluded from "restore defaults").
 > Value shapes are declared and validated per key by
