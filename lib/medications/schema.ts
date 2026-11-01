@@ -14,7 +14,7 @@
  */
 import {z} from "zod";
 
-import type {DoseUnit, Medication} from "@/lib/db/types";
+import type {DoseUnit, InventoryLot, Medication} from "@/lib/db/types";
 import {parseDecimalInput} from "@/lib/units";
 import {DOSE_UNITS, MASS_UNITS, MEDICATION_TYPES} from "./constants";
 
@@ -193,6 +193,13 @@ export const inventoryLotFormSchema = z.object({
 
 export type InventoryLotFormValues = z.infer<typeof inventoryLotFormSchema>;
 
+/** Standalone schema for the single-lot edit dialog. */
+export const inventoryLotDialogSchema = inventoryLotFormSchema.superRefine(
+    (lot, ctx) => {
+        refineInventoryLot(ctx, lot, [], "");
+    }
+);
+
 export const medicationFormSchema = z
     .object({
         name: z
@@ -216,54 +223,7 @@ export const medicationFormSchema = z
     })
     .superRefine((values, ctx) => {
         values.inventoryLots.forEach((lot, index) => {
-            const base = ["inventoryLots", index] as const;
-            checkNumeric(ctx, [...base, "vialCount"], lot.vialCount, {
-                label: `Lot ${index + 1} containers`,
-                required: true,
-                integer: true,
-                min: 0,
-            });
-            checkNumeric(ctx, [...base, "contentAmount"], lot.contentAmount, {
-                label: `Lot ${index + 1} container content`,
-                required: true,
-                positive: true,
-            });
-            checkNumeric(ctx, [...base, "pricePerContainer"], lot.pricePerContainer, {
-                label: `Lot ${index + 1} price per container`,
-                min: 0,
-                max: 1000000,
-            });
-            checkDate(ctx, [...base, "orderDate"], lot.orderDate, `Lot ${index + 1} order date`);
-            checkDate(
-                ctx,
-                [...base, "deliveryDate"],
-                lot.deliveryDate,
-                `Lot ${index + 1} delivery date`
-            );
-
-            if (
-                isRealDate(lot.orderDate.trim()) &&
-                isRealDate(lot.deliveryDate.trim()) &&
-                lot.deliveryDate.trim() < lot.orderDate.trim()
-            ) {
-                ctx.addIssue({
-                    code: "custom",
-                    path: [...base, "deliveryDate"],
-                    message: "Delivery can't be before the order date",
-                });
-            }
-
-            for (const token of lot.coaUrlsText.split(/[\n,]+/)) {
-                if (token.trim() === "") continue;
-                if (!normalizeCoaUrl(token)) {
-                    ctx.addIssue({
-                        code: "custom",
-                        path: [...base, "coaUrlsText"],
-                        message: `"${token.trim()}" is not a valid http(s) link`,
-                    });
-                    break;
-                }
-            }
+            refineInventoryLot(ctx, lot, ["inventoryLots", index], `Lot ${index + 1}`);
         });
 
         checkNumeric(ctx, ["lowStockThreshold"], values.lowStockThreshold, {
@@ -318,6 +278,65 @@ type RefineContext = {
         message: string;
     }) => void;
 };
+
+/** Shared numeric/date/COA validation for one inventory-lot row. */
+function refineInventoryLot(
+    ctx: RefineContext,
+    lot: InventoryLotFormValues,
+    path: (string | number)[],
+    labelPrefix: string
+): void {
+    const label = (field: string) =>
+        labelPrefix ? `${labelPrefix} ${field}` : field;
+
+    checkNumeric(ctx, [...path, "vialCount"], lot.vialCount, {
+        label: label("number of containers"),
+        required: true,
+        integer: true,
+        min: 0,
+    });
+    checkNumeric(ctx, [...path, "contentAmount"], lot.contentAmount, {
+        label: label("container content"),
+        required: true,
+        positive: true,
+    });
+    checkNumeric(ctx, [...path, "pricePerContainer"], lot.pricePerContainer, {
+        label: label("price per container"),
+        min: 0,
+        max: 1000000,
+    });
+    checkDate(ctx, [...path, "orderDate"], lot.orderDate, label("order date"));
+    checkDate(
+        ctx,
+        [...path, "deliveryDate"],
+        lot.deliveryDate,
+        label("delivery date")
+    );
+
+    if (
+        isRealDate(lot.orderDate.trim()) &&
+        isRealDate(lot.deliveryDate.trim()) &&
+        lot.deliveryDate.trim() < lot.orderDate.trim()
+    ) {
+        ctx.addIssue({
+            code: "custom",
+            path: [...path, "deliveryDate"],
+            message: "Delivery can't be before the order date",
+        });
+    }
+
+    for (const token of lot.coaUrlsText.split(/[\n,]+/)) {
+        if (token.trim() === "") continue;
+        if (!normalizeCoaUrl(token)) {
+            ctx.addIssue({
+                code: "custom",
+                path: [...path, "coaUrlsText"],
+                message: `"${token.trim()}" is not a valid http(s) link`,
+            });
+            break;
+        }
+    }
+}
 
 function checkNumeric(
     ctx: RefineContext,
@@ -394,6 +413,44 @@ function parseFormNumber(raw: string): number | undefined {
     return parseDecimalInput(raw);
 }
 
+/** Maps a stored lot into the dialog's string-based form values. */
+export function inventoryLotToFormValues(lot: InventoryLot): InventoryLotFormValues {
+    return {
+        id: lot.id,
+        vialCount: lot.vialCount.toString(),
+        contentAmount: lot.contentAmount.toString(),
+        contentUnit: lot.contentUnit,
+        orderDate: lot.orderDate ?? "",
+        deliveryDate: lot.deliveryDate ?? "",
+        vendor: lot.vendor ?? "",
+        pricePerContainer: lot.pricePerContainer?.toString() ?? "",
+        coaUrlsText: lot.coaUrls?.join("\n") ?? "",
+        notes: lot.notes ?? "",
+    };
+}
+
+/**
+ * Maps form values back into a stored lot. Validation happens in the form
+ * schema first; this helper only normalizes blanks and numbers.
+ */
+export function inventoryLotFormValuesToLot(
+    values: InventoryLotFormValues
+): InventoryLot {
+    const coaUrls = parseCoaUrls(values.coaUrlsText);
+    return {
+        id: values.id.trim() || crypto.randomUUID(),
+        vialCount: Math.max(0, Math.trunc(parseDecimalInput(values.vialCount) ?? 0)),
+        contentAmount: parseDecimalInput(values.contentAmount) ?? 0,
+        contentUnit: values.contentUnit,
+        orderDate: values.orderDate.trim() || undefined,
+        deliveryDate: values.deliveryDate.trim() || undefined,
+        vendor: values.vendor.trim() || undefined,
+        pricePerContainer: parseDecimalInput(values.pricePerContainer),
+        coaUrls: coaUrls.length > 0 ? coaUrls : undefined,
+        notes: values.notes.trim() || undefined,
+    };
+}
+
 /** Creates a blank lot row for the dialog. */
 export function newInventoryLotFormValues(
     contentUnit: DoseUnit = "mg"
@@ -422,7 +479,7 @@ export function medicationToFormValues(medication?: Medication): MedicationFormV
             halfLifeHours: "",
             absorptionRatePerHour: "",
             absorptionHalfLifeHours: "",
-            inventoryLots: [newInventoryLotFormValues("mg")],
+            inventoryLots: [],
             lowStockThreshold: "",
             hasReconstitution: false,
             vialQuantity: "",
@@ -438,18 +495,7 @@ export function medicationToFormValues(medication?: Medication): MedicationFormV
         halfLifeHours: medication.halfLifeHours?.toString() ?? "",
         absorptionRatePerHour: (medication as any).absorptionRatePerHour?.toString() ?? "",
         absorptionHalfLifeHours: (medication as any).absorptionHalfLifeHours?.toString() ?? "",
-        inventoryLots: medication.inventory.lots.map((lot) => ({
-            id: lot.id,
-            vialCount: lot.vialCount.toString(),
-            contentAmount: lot.contentAmount.toString(),
-            contentUnit: lot.contentUnit,
-            orderDate: lot.orderDate ?? "",
-            deliveryDate: lot.deliveryDate ?? "",
-            vendor: lot.vendor ?? "",
-            pricePerContainer: lot.pricePerContainer?.toString() ?? "",
-            coaUrlsText: lot.coaUrls?.join("\n") ?? "",
-            notes: lot.notes ?? "",
-        })),
+        inventoryLots: medication.inventory.lots.map(inventoryLotToFormValues),
         lowStockThreshold: medication.inventory.lowStockThreshold?.toString() ?? "",
         hasReconstitution: medication.type === "peptide" && !!medication.reconstitution,
         vialQuantity: medication.reconstitution?.vialQuantity.toString() ?? "",
@@ -471,21 +517,7 @@ export function toMedicationInput(values: MedicationFormValues): MedicationInput
         absorptionRatePerHour: parseFormNumber((values as any).absorptionRatePerHour),
         absorptionHalfLifeHours: parseFormNumber((values as any).absorptionHalfLifeHours),
         inventory: {
-            lots: values.inventoryLots.map((lot) => {
-                const coaUrls = parseCoaUrls(lot.coaUrlsText);
-                return {
-                    id: lot.id.trim() || undefined,
-                    vialCount: Math.trunc(parseFormNumber(lot.vialCount) ?? 0),
-                    contentAmount: parseFormNumber(lot.contentAmount) ?? Number.NaN,
-                    contentUnit: lot.contentUnit,
-                    orderDate: lot.orderDate.trim() || undefined,
-                    deliveryDate: lot.deliveryDate.trim() || undefined,
-                    vendor: lot.vendor.trim() || undefined,
-                    pricePerContainer: parseFormNumber(lot.pricePerContainer),
-                    coaUrls: coaUrls.length > 0 ? coaUrls : undefined,
-                    notes: lot.notes.trim() || undefined,
-                };
-            }),
+            lots: values.inventoryLots.map(inventoryLotFormValuesToLot),
             lowStockThreshold: parseFormNumber(values.lowStockThreshold),
         },
         notes: values.notes.trim() || undefined,

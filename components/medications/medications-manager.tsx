@@ -11,19 +11,27 @@ import {Card, CardContent} from "@/components/ui/card";
 import {Input} from "@/components/ui/input";
 import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue,} from "@/components/ui/select";
 import {Skeleton} from "@/components/ui/skeleton";
-import {ensureDatabase, type Medication, type MedicationType, type Schedule} from "@/lib/db";
+import {ensureDatabase, type InventoryLot, type Medication, type MedicationType, type Schedule,} from "@/lib/db";
 import {storageAwareMessage} from "@/lib/db/quota";
-import {MEDICATION_TYPE_META, MEDICATION_TYPES} from "@/lib/medications/constants";
+import {MEDICATION_TYPE_META, MEDICATION_TYPES, medicationTypeMeta,} from "@/lib/medications/constants";
 import {inventoryQuantity, inventoryStatus} from "@/lib/medications/derived";
+import {
+    type InventoryLotFormValues,
+    inventoryLotFormValuesToLot,
+    inventoryLotToFormValues,
+} from "@/lib/medications/schema";
 import {
     adjustInventory,
     countLinkedRecords,
+    deleteInventoryLot,
     deleteMedication,
     type LinkedRecordCounts,
     listMedications,
     listSchedules,
+    saveInventoryLot,
 } from "@/lib/medications/service";
 
+import {InventoryLotDialog} from "./inventory-lot-dialog";
 import {MedicationCard} from "./medication-card";
 import {MedicationFormDialog} from "./medication-form-dialog";
 
@@ -65,6 +73,10 @@ export function MedicationsManager() {
 
     const [formOpen, setFormOpen] = React.useState(false);
     const [editing, setEditing] = React.useState<Medication | null>(null);
+    const [lotEditor, setLotEditor] = React.useState<{
+        medication: Medication;
+        values: InventoryLotFormValues;
+    } | null>(null);
     const [deleteTarget, setDeleteTarget] = React.useState<DeleteTarget | null>(null);
     const [deleting, setDeleting] = React.useState(false);
     const [busyId, setBusyId] = React.useState<string | null>(null);
@@ -173,6 +185,13 @@ export function MedicationsManager() {
         setFormOpen(true);
     }, []);
 
+    const openLotEdit = React.useCallback(
+        (medication: Medication, lot: InventoryLot) => {
+            setLotEditor({medication, values: inventoryLotToFormValues(lot)});
+        },
+        []
+    );
+
     const handleSaved = React.useCallback(
         (medication: Medication, mode: "created" | "updated") => {
             setMedications((previous) => {
@@ -254,6 +273,50 @@ export function MedicationsManager() {
         },
         [reportError]
     );
+
+    const handleLotSaved = React.useCallback(
+        async (values: InventoryLotFormValues) => {
+            if (!lotEditor) return;
+            const {medication} = lotEditor;
+            setBusyId(medication.id);
+            try {
+                const updated = await saveInventoryLot(
+                    medication.id,
+                    inventoryLotFormValuesToLot(values)
+                );
+                setMedications((previous) =>
+                    previous.map((m) => (m.id === updated.id ? updated : m))
+                );
+                setFeedback({kind: "success", message: "Inventory lot saved."});
+                setLotEditor(null);
+            } catch (error: unknown) {
+                reportError(error, "Could not save inventory lot");
+                throw error;
+            } finally {
+                setBusyId(null);
+            }
+        },
+        [lotEditor, reportError]
+    );
+
+    const handleLotRemoved = React.useCallback(async () => {
+        if (!lotEditor) return;
+        const {medication, values} = lotEditor;
+        setBusyId(medication.id);
+        try {
+            const updated = await deleteInventoryLot(medication.id, values.id);
+            setMedications((previous) =>
+                previous.map((m) => (m.id === updated.id ? updated : m))
+            );
+            setFeedback({kind: "success", message: "Inventory lot removed."});
+            setLotEditor(null);
+        } catch (error: unknown) {
+            reportError(error, "Could not remove inventory lot");
+            throw error;
+        } finally {
+            setBusyId(null);
+        }
+    }, [lotEditor, reportError]);
 
     // -- Render ------------------------------------------------------------
 
@@ -392,6 +455,7 @@ export function MedicationsManager() {
                             schedules={schedules}
                             onEdit={openEdit}
                             onDelete={(med) => void requestDelete(med)}
+                            onEditLot={openLotEdit}
                             onAdjust={(med, vialDelta) =>
                                 void handleAdjust(med, vialDelta)
                             }
@@ -432,6 +496,20 @@ export function MedicationsManager() {
                 medication={editing}
                 schedules={schedules}
                 onSaved={handleSaved}
+            />
+
+            <InventoryLotDialog
+                open={lotEditor !== null}
+                onOpenChange={(open) => {
+                    if (!open) setLotEditor(null);
+                }}
+                lot={lotEditor?.values ?? null}
+                containerNoun={medicationTypeMeta(
+                    lotEditor?.medication.type ?? "other"
+                ).containerNoun}
+                defaultContentUnit={lotEditor?.medication.unit ?? "mg"}
+                onSave={handleLotSaved}
+                onRemove={lotEditor ? handleLotRemoved : undefined}
             />
 
             <ConfirmDialog

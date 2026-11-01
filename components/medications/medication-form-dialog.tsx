@@ -3,7 +3,7 @@
 import * as React from "react";
 import {useFieldArray, useForm, useWatch} from "react-hook-form";
 import {zodResolver} from "@hookform/resolvers/zod";
-import {Plus, Trash2, TriangleAlert} from "lucide-react";
+import {Plus, TriangleAlert} from "lucide-react";
 
 import type {DoseUnit, MassUnit, Medication, Schedule} from "@/lib/db/types";
 import {
@@ -16,6 +16,8 @@ import {
 } from "@/lib/medications/constants";
 import {amountInMedicationUnit} from "@/lib/medications/derived";
 import {
+    type InventoryLotFormValues,
+    inventoryLotFormValuesToLot,
     medicationFormSchema,
     type MedicationFormValues,
     medicationToFormValues,
@@ -41,6 +43,8 @@ import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue,} from "@/
 import {Separator} from "@/components/ui/separator";
 import {Switch} from "@/components/ui/switch";
 import {Textarea} from "@/components/ui/textarea";
+import {InventoryLotDialog} from "./inventory-lot-dialog";
+import {InventoryLotList} from "./inventory-lot-list";
 import {ConcentrationSummary, ScheduleSection} from "./reconstitution-panel";
 
 // ---------------------------------------------------------------------------
@@ -117,10 +121,15 @@ function MedicationForm({medication, schedules, onSaved, onCancel}: MedicationFo
         defaultValues: defaults,
     });
 
-    const {fields, append, remove} = useFieldArray({
+    const {append, remove, update} = useFieldArray({
         control: form.control,
         name: "inventoryLots",
     });
+
+    const [lotEditor, setLotEditor] = React.useState<{
+        index: number | null;
+        values: InventoryLotFormValues;
+    } | null>(null);
 
     // Whole-form watch for the conditional sections and live previews. The
     // merged values are plain strings/booleans, so sections re-render per
@@ -199,6 +208,22 @@ function MedicationForm({medication, schedules, onSaved, onCancel}: MedicationFo
         if (!isMassUnit(first.contentUnit)) return;
         form.setValue("vialQuantity", first.contentAmount);
         form.setValue("vialQuantityUnit", first.contentUnit);
+    };
+
+    const handleLotSaved = (values: InventoryLotFormValues) => {
+        if (lotEditor === null || lotEditor.index === null) {
+            append(values);
+        } else {
+            update(lotEditor.index, values);
+        }
+        setLotEditor(null);
+    };
+
+    const handleLotRemoved = () => {
+        if (lotEditor !== null && lotEditor.index !== null) {
+            remove(lotEditor.index);
+        }
+        setLotEditor(null);
     };
 
     const activeSchedules = React.useMemo(
@@ -418,7 +443,7 @@ function MedicationForm({medication, schedules, onSaved, onCancel}: MedicationFo
 
                 <Separator/>
 
-                {/* Inventory — one card per purchase/delivery lot */}
+                {/* Inventory — compact lot list; each row opens the lot editor */}
                 <fieldset className="flex flex-col gap-3">
                     <legend className="text-sm font-medium">Inventory lots</legend>
                     <p className="text-muted-foreground text-xs">
@@ -427,286 +452,41 @@ function MedicationForm({medication, schedules, onSaved, onCancel}: MedicationFo
                         {meta.containerNoun}.
                     </p>
 
-                    {fields.length === 0 && (
+                    {inventoryLots.length === 0 ? (
                         <p className="text-muted-foreground rounded-lg border border-dashed px-3 py-4 text-center text-xs">
                             No inventory lots yet. Add one to track stock and how
                             long it will last.
                         </p>
+                    ) : (
+                        <InventoryLotList
+                            lots={inventoryLots.map(inventoryLotFormValuesToLot)}
+                            containerNoun={meta.containerNoun}
+                            onEdit={(_lot, index) => {
+                                const values = inventoryLots[index];
+                                if (!values) return;
+                                setLotEditor({index, values});
+                            }}
+                        />
                     )}
 
-                    {fields.map((field, index) => {
-                        const lot = inventoryLots[index] ?? field;
-                        const vials = parseDecimalInput(lot.vialCount) ?? 0;
-                        const content = parseDecimalInput(lot.contentAmount) ?? 0;
-                        const price = parseDecimalInput(lot.pricePerContainer);
-                        const total = vials > 0 && content > 0 ? vials * content : 0;
-                        const lotPrice =
-                            price !== undefined && price >= 0 && vials > 0
-                                ? vials * price
-                                : null;
-                        return (
-                            <div
-                                key={field.id}
-                                className="bg-muted/20 flex flex-col gap-3 rounded-lg border p-3"
-                            >
-                                <div className="flex items-start justify-between gap-2">
-                                    <div className="min-w-0">
-                                        <p className="text-sm font-medium">
-                                            Lot {index + 1}
-                                        </p>
-                                        <p className="text-muted-foreground text-xs tabular-nums">
-                                            {vials > 0 && content > 0
-                                                ? `${formatNumber(vials)} × ${formatAmount(content, lot.contentUnit)} = ${formatAmount(total, lot.contentUnit)}`
-                                                : "Enter containers and their content."}
-                                        </p>
-                                        {lotPrice !== null && (
-                                            <p className="text-muted-foreground text-xs tabular-nums">
-                                                Lot value {formatPrice(lotPrice)}
-                                            </p>
-                                        )}
-                                    </div>
-                                    <Button
-                                        type="button"
-                                        variant="ghost"
-                                        size="icon"
-                                        className="size-7 shrink-0"
-                                        onClick={() => remove(index)}
-                                        aria-label={`Remove inventory lot ${index + 1}`}
-                                    >
-                                        <Trash2 className="size-3.5" aria-hidden/>
-                                    </Button>
-                                </div>
-
-                                <div className="grid gap-3 sm:grid-cols-3">
-                                    <FormField
-                                        control={form.control}
-                                        name={`inventoryLots.${index}.vialCount`}
-                                        render={({field: rowField}) => (
-                                            <FormItem>
-                                                <FormLabel className="text-xs">
-                                                    Number of {containerLabel.toLowerCase()}
-                                                </FormLabel>
-                                                <FormControl>
-                                                    <Input
-                                                        inputMode="numeric"
-                                                        placeholder="1"
-                                                        className="tabular-nums"
-                                                        {...rowField}
-                                                    />
-                                                </FormControl>
-                                                <FormMessage/>
-                                            </FormItem>
-                                        )}
-                                    />
-                                    <FormField
-                                        control={form.control}
-                                        name={`inventoryLots.${index}.contentAmount`}
-                                        render={({field: rowField}) => (
-                                            <FormItem>
-                                                <FormLabel className="text-xs">
-                                                    Content per {meta.containerNoun}
-                                                </FormLabel>
-                                                <FormControl>
-                                                    <Input
-                                                        inputMode="decimal"
-                                                        placeholder="5"
-                                                        className="tabular-nums"
-                                                        {...rowField}
-                                                    />
-                                                </FormControl>
-                                                <FormMessage/>
-                                            </FormItem>
-                                        )}
-                                    />
-                                    <FormField
-                                        control={form.control}
-                                        name={`inventoryLots.${index}.contentUnit`}
-                                        render={({field: rowField}) => (
-                                            <FormItem>
-                                                <FormLabel className="text-xs">
-                                                    Content unit
-                                                </FormLabel>
-                                                <Select
-                                                    onValueChange={rowField.onChange}
-                                                    value={rowField.value}
-                                                >
-                                                    <FormControl>
-                                                        <SelectTrigger className="w-full">
-                                                            <SelectValue/>
-                                                        </SelectTrigger>
-                                                    </FormControl>
-                                                    <SelectContent>
-                                                        {DOSE_UNITS.map((value) => (
-                                                            <SelectItem key={value} value={value}>
-                                                                {doseUnitLabel(value)}
-                                                            </SelectItem>
-                                                        ))}
-                                                    </SelectContent>
-                                                </Select>
-                                                <FormMessage/>
-                                            </FormItem>
-                                        )}
-                                    />
-                                </div>
-
-                                <div className="grid gap-3 sm:grid-cols-2">
-                                    <FormField
-                                        control={form.control}
-                                        name={`inventoryLots.${index}.orderDate`}
-                                        render={({field: rowField}) => (
-                                            <FormItem>
-                                                <FormLabel className="text-xs">
-                                                    Order date{" "}
-                                                    <span className="text-muted-foreground font-normal">
-                                                        (optional)
-                                                    </span>
-                                                </FormLabel>
-                                                <FormControl>
-                                                    <Input
-                                                        type="date"
-                                                        className="tabular-nums"
-                                                        {...rowField}
-                                                    />
-                                                </FormControl>
-                                                <FormMessage/>
-                                            </FormItem>
-                                        )}
-                                    />
-                                    <FormField
-                                        control={form.control}
-                                        name={`inventoryLots.${index}.deliveryDate`}
-                                        render={({field: rowField}) => (
-                                            <FormItem>
-                                                <FormLabel className="text-xs">
-                                                    Delivery date{" "}
-                                                    <span className="text-muted-foreground font-normal">
-                                                        (optional)
-                                                    </span>
-                                                </FormLabel>
-                                                <FormControl>
-                                                    <Input
-                                                        type="date"
-                                                        className="tabular-nums"
-                                                        {...rowField}
-                                                    />
-                                                </FormControl>
-                                                <FormMessage/>
-                                            </FormItem>
-                                        )}
-                                    />
-                                </div>
-
-                                <FormField
-                                    control={form.control}
-                                    name={`inventoryLots.${index}.vendor`}
-                                    render={({field: rowField}) => (
-                                        <FormItem>
-                                            <FormLabel className="text-xs">
-                                                Vendor{" "}
-                                                <span className="text-muted-foreground font-normal">
-                                                    (optional)
-                                                </span>
-                                            </FormLabel>
-                                            <FormControl>
-                                                <Input
-                                                    placeholder="Vendor / supplier, batch info…"
-                                                    {...rowField}
-                                                />
-                                            </FormControl>
-                                            <FormMessage/>
-                                        </FormItem>
-                                    )}
-                                />
-
-                                <FormField
-                                    control={form.control}
-                                    name={`inventoryLots.${index}.pricePerContainer`}
-                                    render={({field: rowField}) => (
-                                        <FormItem>
-                                            <FormLabel className="text-xs">
-                                                Price per {meta.containerNoun}{" "}
-                                                <span className="text-muted-foreground font-normal">
-                                                    (optional)
-                                                </span>
-                                            </FormLabel>
-                                            <div className="relative">
-                                                <FormControl>
-                                                    <Input
-                                                        inputMode="decimal"
-                                                        placeholder="29.99"
-                                                        className="pr-8 tabular-nums"
-                                                        {...rowField}
-                                                    />
-                                                </FormControl>
-                                                <span
-                                                    className="text-muted-foreground pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs">
-                                                    $
-                                                </span>
-                                            </div>
-                                            <FormDescription className="text-xs">
-                                                USD per {meta.containerNoun}, not per content
-                                                unit.
-                                            </FormDescription>
-                                            <FormMessage/>
-                                        </FormItem>
-                                    )}
-                                />
-
-                                <FormField
-                                    control={form.control}
-                                    name={`inventoryLots.${index}.coaUrlsText`}
-                                    render={({field: rowField}) => (
-                                        <FormItem>
-                                            <FormLabel className="text-xs">
-                                                COA links{" "}
-                                                <span className="text-muted-foreground font-normal">
-                                                    (optional)
-                                                </span>
-                                            </FormLabel>
-                                            <FormControl>
-                                                <Textarea
-                                                    rows={2}
-                                                    placeholder="https://example.com/coa.pdf (one per line)"
-                                                    className="resize-none text-xs"
-                                                    {...rowField}
-                                                />
-                                            </FormControl>
-                                            <FormMessage/>
-                                        </FormItem>
-                                    )}
-                                />
-
-                                <FormField
-                                    control={form.control}
-                                    name={`inventoryLots.${index}.notes`}
-                                    render={({field: rowField}) => (
-                                        <FormItem>
-                                            <FormLabel className="text-xs">
-                                                Lot note{" "}
-                                                <span className="text-muted-foreground font-normal">
-                                                    (optional)
-                                                </span>
-                                            </FormLabel>
-                                            <FormControl>
-                                                <Input
-                                                    placeholder="Batch, storage, appearance…"
-                                                    {...rowField}
-                                                />
-                                            </FormControl>
-                                            <FormMessage/>
-                                        </FormItem>
-                                    )}
-                                />
-                            </div>
-                        );
-                    })}
+                    {form.formState.errors.inventoryLots && (
+                        <p className="text-destructive text-xs">
+                            Some inventory lots are incomplete. Open each lot to
+                            fix it.
+                        </p>
+                    )}
 
                     <Button
                         type="button"
                         variant="outline"
                         size="sm"
                         className="self-start"
-                        onClick={() => append(newInventoryLotFormValues(unit))}
+                        onClick={() =>
+                            setLotEditor({
+                                index: null,
+                                values: newInventoryLotFormValues(unit),
+                            })
+                        }
                     >
                         <Plus className="size-4" aria-hidden/>
                         Add inventory lot
@@ -994,6 +774,23 @@ function MedicationForm({medication, schedules, onSaved, onCancel}: MedicationFo
                     </Button>
                 </div>
             </form>
+
+            <InventoryLotDialog
+                open={lotEditor !== null}
+                onOpenChange={(open) => {
+                    if (!open) setLotEditor(null);
+                }}
+                lot={lotEditor?.values ?? null}
+                isNew={lotEditor?.index === null}
+                containerNoun={meta.containerNoun}
+                defaultContentUnit={unit}
+                onSave={handleLotSaved}
+                onRemove={
+                    lotEditor !== null && lotEditor.index !== null
+                        ? handleLotRemoved
+                        : undefined
+                }
+            />
         </Form>
     );
 }

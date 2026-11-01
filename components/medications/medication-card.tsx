@@ -3,7 +3,6 @@
 import * as React from "react";
 import {
     CalendarClock,
-    ExternalLink,
     FlaskConical,
     Minus,
     MoreHorizontal,
@@ -14,7 +13,7 @@ import {
     TriangleAlert,
 } from "lucide-react";
 
-import type {Medication, Schedule} from "@/lib/db/types";
+import type {InventoryLot, Medication, Schedule} from "@/lib/db/types";
 import {
     activeSchedulesFor,
     concentrationLabel,
@@ -23,8 +22,6 @@ import {
     inventoryPriceTotals,
     inventoryStatus,
     inventoryTotals,
-    lotTotalAmount,
-    lotTotalPrice,
     stockRatio,
 } from "@/lib/medications/derived";
 import {medicationTypeMeta} from "@/lib/medications/constants";
@@ -36,6 +33,7 @@ import {Button} from "@/components/ui/button";
 import {Card, CardContent} from "@/components/ui/card";
 import {DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,} from "@/components/ui/dropdown-menu";
 import {Progress} from "@/components/ui/progress";
+import {InventoryLotList} from "./inventory-lot-list";
 import {ScheduleSection} from "./reconstitution-panel";
 
 export interface MedicationCardProps {
@@ -44,6 +42,8 @@ export interface MedicationCardProps {
     schedules: Schedule[];
     onEdit: (medication: Medication) => void;
     onDelete: (medication: Medication) => void;
+    /** Opens the single-lot editor for one inventory line. */
+    onEditLot: (medication: Medication, lot: InventoryLot) => void;
     /** Adds/removes whole containers (FIFO removal, newest-lot top-up). */
     onAdjust: (medication: Medication, vialDelta: number) => void;
     /** Disables quick adjustments while a write is in flight for this row. */
@@ -67,6 +67,7 @@ export function MedicationCard({
                                    schedules,
                                    onEdit,
                                    onDelete,
+                                   onEditLot,
                                    onAdjust,
                                    adjusting = false,
                                }: MedicationCardProps) {
@@ -276,80 +277,11 @@ export function MedicationCard({
                         <p className="text-muted-foreground text-[11px] font-medium tracking-wide uppercase">
                             Inventory lots
                         </p>
-                        <ul className="flex flex-col gap-1.5">
-                            {lots.map((lot) => {
-                                // Defensive: imported payloads bypass the form
-                                // schema, so never turn a stored string into a
-                                // non-http link target.
-                                const coaUrls = (lot.coaUrls ?? []).filter((url) =>
-                                    /^https?:\/\//i.test(url)
-                                );
-                                const lotPrice = lotTotalPrice(lot);
-                                return (
-                                    <li
-                                        key={lot.id}
-                                        className={cn(
-                                            "border-border/60 flex flex-col gap-1 rounded-md border px-2.5 py-1.5 text-xs",
-                                            lot.vialCount === 0 && "opacity-60"
-                                        )}
-                                    >
-                                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                                            <span className="font-medium tabular-nums">
-                                                {formatNumber(lot.vialCount)} ×{" "}
-                                                {formatAmount(lot.contentAmount, lot.contentUnit)}
-                                            </span>
-                                            <span className="text-muted-foreground tabular-nums">
-                                                = {formatAmount(lotTotalAmount(lot), lot.contentUnit)}
-                                            </span>
-                                            {lot.vendor && (
-                                                <span className="text-muted-foreground truncate">
-                                                    · {lot.vendor}
-                                                </span>
-                                            )}
-                                            {lot.orderDate && (
-                                                <span className="text-muted-foreground tabular-nums">
-                                                    · ordered {lot.orderDate}
-                                                </span>
-                                            )}
-                                            {lot.deliveryDate && (
-                                                <span className="text-muted-foreground tabular-nums">
-                                                    · delivered {lot.deliveryDate}
-                                                </span>
-                                            )}
-                                            {lotPrice !== null && (
-                                                <span className="text-muted-foreground tabular-nums">
-                                                    · {formatPrice(lotPrice)}
-                                                    {lot.vialCount > 0 &&
-                                                        ` (${formatPrice(lotPrice / lot.vialCount)}/${meta.containerNoun})`}
-                                                </span>
-                                            )}
-                                        </div>
-                                        {(coaUrls.length > 0 || lot.notes) && (
-                                            <div
-                                                className="text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-1">
-                                                {coaUrls.map((url, index) => (
-                                                    <a
-                                                        key={`${lot.id}-coa-${index}`}
-                                                        href={url}
-                                                        target="_blank"
-                                                        rel="noopener noreferrer"
-                                                        title={url}
-                                                        className="text-primary inline-flex items-center gap-1 hover:underline"
-                                                    >
-                                                        COA
-                                                        {coaUrls.length > 1 ? ` ${index + 1}` : ""}
-                                                        <ExternalLink className="size-3" aria-hidden/>
-                                                    </a>
-                                                ))}
-                                                {lot.notes && (
-                                                    <span className="line-clamp-1">{lot.notes}</span>
-                                                )}
-                                            </div>
-                                        )}
-                                    </li>
-                                );
-                            })}
-                        </ul>
+                        <InventoryLotList
+                            lots={lots}
+                            containerNoun={meta.containerNoun}
+                            onEdit={(lot) => onEditLot(medication, lot)}
+                        />
                     </div>
                 )}
 

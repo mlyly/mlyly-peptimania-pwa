@@ -8,7 +8,7 @@
  * medications page gates rendering on it, mirroring the settings page).
  */
 import {db, type InventoryLot, type Medication, type Schedule} from "@/lib/db";
-import {type MedicationInput, medicationInputSchema} from "./schema";
+import {inventoryLotInputSchema, type MedicationInput, medicationInputSchema,} from "./schema";
 
 function newId(): string {
     return crypto.randomUUID();
@@ -181,6 +181,63 @@ export async function adjustInventory(
             inventory: {
                 ...existing.inventory,
                 lots,
+            },
+            updatedAt: nowIso(),
+        };
+        await db.medications.put(medication);
+        return medication;
+    });
+}
+
+/**
+ * Creates or replaces one inventory lot. Lots with an id already on the
+ * medication are updated in place; new ids are appended. The rest of the
+ * medication is left untouched.
+ */
+export async function saveInventoryLot(
+    id: string,
+    lot: InventoryLot
+): Promise<Medication> {
+    const parsed = inventoryLotInputSchema.parse(lot);
+    return db.transaction("rw", db.medications, async () => {
+        const existing = await db.medications.get(id);
+        if (!existing) throw new Error("Medication not found — it may have been deleted.");
+
+        const nextLot = normalizeLots([parsed])[0];
+        const exists = existing.inventory.lots.some((entry) => entry.id === nextLot.id);
+        const lots = exists
+            ? existing.inventory.lots.map((entry) =>
+                entry.id === nextLot.id ? nextLot : entry
+            )
+            : [...existing.inventory.lots, nextLot];
+
+        const medication: Medication = {
+            ...existing,
+            inventory: {
+                ...existing.inventory,
+                lots,
+            },
+            updatedAt: nowIso(),
+        };
+        await db.medications.put(medication);
+        return medication;
+    });
+}
+
+/** Removes one inventory lot, leaving the rest of the medication intact. */
+export async function deleteInventoryLot(
+    id: string,
+    lotId: string
+): Promise<Medication> {
+    return db.transaction("rw", db.medications, async () => {
+        const existing = await db.medications.get(id);
+        if (!existing) throw new Error("Medication not found — it may have been deleted.");
+
+        const medication: Medication = {
+            ...existing,
+            inventory: {
+                ...existing.inventory,
+                lots: existing.inventory.lots.filter((lot) => lot.id !== lotId),
             },
             updatedAt: nowIso(),
         };

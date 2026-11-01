@@ -49,7 +49,9 @@ import {
     adjustInventory,
     countLinkedRecords,
     createMedication,
+    deleteInventoryLot,
     deleteMedication,
+    saveInventoryLot,
     updateMedication,
 } from "../lib/medications/service";
 import {convertUnit, mlToSyringeUnits, mlToWholeSyringeUnits} from "../lib/units";
@@ -137,10 +139,10 @@ async function main() {
     const afterMigration = await db.medications.toArray();
     const byId = new Map(afterMigration.map((m) => [m.id, m]));
     check(
-        "migration reports v1 → v8",
+        "migration reports v1 → v9",
         migrated.from === 1 &&
-        migrated.to === 8 &&
-        migrated.applied.join() === "2,3,4,5,6,7,8",
+        migrated.to === 9 &&
+        migrated.applied.join() === "2,3,4,5,6,7,8,9",
         `got ${migrated.from} → ${migrated.to} (${migrated.applied.join()})`
     );
     check(
@@ -377,6 +379,39 @@ async function main() {
         afterTopUp.inventory.lots.find((lot) => lot.id === "new-lot")?.vialCount === 2 &&
         afterTopUp.inventory.lots.find((lot) => lot.id === "old-lot")?.vialCount === 0
     );
+
+    // Single-lot editor: upsert one lot and remove one lot without touching the rest.
+    const lotEdited = await saveInventoryLot(dated.id, {
+        id: "old-lot",
+        vialCount: 3,
+        contentAmount: 30,
+        contentUnit: "pcs",
+        vendor: "Edited vendor",
+    });
+    check(
+        "single-lot save updates in place",
+        lotEdited.inventory.lots.length === 2 &&
+        lotEdited.inventory.lots.find((lot) => lot.id === "old-lot")?.vialCount === 3 &&
+        lotEdited.inventory.lots.find((lot) => lot.id === "old-lot")?.vendor === "Edited vendor" &&
+        lotEdited.inventory.lots.find((lot) => lot.id === "new-lot")?.vialCount === 2
+    );
+    const lotAdded = await saveInventoryLot(dated.id, {
+        id: "extra-lot",
+        vialCount: 1,
+        contentAmount: 10,
+        contentUnit: "pcs",
+    });
+    check(
+        "single-lot save appends a new lot",
+        lotAdded.inventory.lots.length === 3 &&
+        lotAdded.inventory.lots.some((lot) => lot.id === "extra-lot")
+    );
+    const lotRemoved = await deleteInventoryLot(dated.id, "extra-lot");
+    check(
+        "single-lot delete removes only that lot",
+        lotRemoved.inventory.lots.length === 2 &&
+        !lotRemoved.inventory.lots.some((lot) => lot.id === "extra-lot")
+    );
     await deleteMedication(dated.id);
 
     // --------------------------------------------------- derived math
@@ -501,10 +536,22 @@ async function main() {
     const formValues = medicationToFormValues(); // create-mode defaults
     const invalidForm = medicationFormSchema.safeParse(formValues);
     check(
-        "blank form rejected (name + lot content required)",
+        "blank form rejected (name required, no default lots)",
         !invalidForm.success &&
-        JSON.stringify(invalidForm.error.issues.map((i) => i.path.join("."))).includes("name") &&
-        JSON.stringify(invalidForm.error.issues.map((i) => i.path.join("."))).includes("inventoryLots.0.contentAmount")
+        formValues.inventoryLots.length === 0 &&
+        invalidForm.error.issues.some((i) => i.path.join(".") === "name")
+    );
+    const blankLotForm = medicationFormSchema.safeParse({
+        ...formValues,
+        name: "Blank lot",
+        inventoryLots: [newInventoryLotFormValues("mg")],
+    });
+    check(
+        "blank lot content is rejected",
+        !blankLotForm.success &&
+        blankLotForm.error.issues.some(
+            (i) => i.path.join(".") === "inventoryLots.0.contentAmount"
+        )
     );
 
     const peptideForm = medicationToFormValues();
