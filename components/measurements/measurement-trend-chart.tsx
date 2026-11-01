@@ -12,22 +12,22 @@ import type {TrendChartRow} from "@/lib/measurements/derived";
 // ---------------------------------------------------------------------------
 
 const timeFormatter = new Intl.DateTimeFormat(undefined, {
-    hour: "numeric",
+    hour: "2-digit",
     minute: "2-digit",
 });
 const weekdayFormatter = new Intl.DateTimeFormat(undefined, {
     weekday: "short",
-    day: "numeric",
+    day: "2-digit",
 });
 const dateFormatter = new Intl.DateTimeFormat(undefined, {
     month: "short",
-    day: "numeric",
+    day: "2-digit",
 });
 const tooltipFormatter = new Intl.DateTimeFormat(undefined, {
     weekday: "short",
     month: "short",
-    day: "numeric",
-    hour: "numeric",
+    day: "2-digit",
+    hour: "2-digit",
     minute: "2-digit",
 });
 

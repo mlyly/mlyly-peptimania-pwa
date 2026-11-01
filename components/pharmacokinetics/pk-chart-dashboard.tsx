@@ -67,8 +67,8 @@ function windowLabel(startMs: number, endMs: number): string {
 const instantLabel = new Intl.DateTimeFormat(undefined, {
     weekday: "short",
     month: "short",
-    day: "numeric",
-    hour: "numeric",
+    day: "2-digit",
+    hour: "2-digit",
     minute: "2-digit",
 });
 

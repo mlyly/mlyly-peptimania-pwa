@@ -333,10 +333,10 @@ function weekdaySummary(schedule: Schedule): string {
     return `${labels.slice(0, -1).join(", ")} & ${labels[labels.length - 1]}`;
 }
 
-/** "08:00" → "8:00 AM" (locale-aware clock rendering). */
+/** "08:00" → "08:00 AM" (locale-aware clock rendering). */
 export function formatTimeOfDay(timeOfDay: string): string {
     const match = /^(\d{2}):(\d{2})$/.exec(timeOfDay.trim());
     if (!match) return timeOfDay;
     const date = new Date(2000, 0, 1, Number(match[1]), Number(match[2]));
-    return date.toLocaleTimeString(undefined, {hour: "numeric", minute: "2-digit"});
+    return date.toLocaleTimeString(undefined, {hour: "2-digit", minute: "2-digit"});
 }

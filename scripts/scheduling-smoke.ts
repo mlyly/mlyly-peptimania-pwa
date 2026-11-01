@@ -511,8 +511,8 @@ async function main() {
         occurrenceScheduleSummary(weekly) === "Mon & Thu · " + formatTimeOfDay("09:00")
     );
     check(
-        "formatTimeOfDay renders a 12h clock",
-        formatTimeOfDay("08:05").includes("8:05") && formatTimeOfDay("08:05").includes("AM") &&
+        "formatTimeOfDay renders a fixed-width 12h clock",
+        formatTimeOfDay("08:05").includes("08:05") && formatTimeOfDay("08:05").includes("AM") &&
         formatTimeOfDay("19:30").includes("PM")
     );
 

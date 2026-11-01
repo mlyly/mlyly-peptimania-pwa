@@ -32,18 +32,18 @@ import {
 // ---------------------------------------------------------------------------
 
 const timeFormatter = new Intl.DateTimeFormat(undefined, {
-    hour: "numeric",
+    hour: "2-digit",
     minute: "2-digit",
 });
 
 const weekdayFormatter = new Intl.DateTimeFormat(undefined, {
     weekday: "short",
-    day: "numeric",
+    day: "2-digit",
 });
 
 const dateFormatter = new Intl.DateTimeFormat(undefined, {
     month: "short",
-    day: "numeric",
+    day: "2-digit",
 });
 
 const monthFormatter = new Intl.DateTimeFormat(undefined, {
@@ -53,9 +53,9 @@ const monthFormatter = new Intl.DateTimeFormat(undefined, {
 const tooltipDateFormatter = new Intl.DateTimeFormat(undefined, {
     weekday: "short",
     month: "short",
-    day: "numeric",
+    day: "2-digit",
     year: "numeric",
-    hour: "numeric",
+    hour: "2-digit",
     minute: "2-digit",
 });
 

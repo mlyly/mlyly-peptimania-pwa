@@ -187,6 +187,7 @@ export function ScheduleCalendar({
                 ))}
                 {cells.map((day) => {
                     const iso = dateOnlyIso(day);
+                    const dayLabel = String(day.getDate()).padStart(2, "0");
                     const inMonth = day.getMonth() === viewMonth;
                     const isToday = isSameLocalDay(day, now);
                     const isSelected = isSameLocalDay(day, selectedDate);
@@ -199,7 +200,7 @@ export function ScheduleCalendar({
                             type="button"
                             onClick={() => onSelectDate(day)}
                             aria-pressed={isSelected}
-                            aria-label={`${formatMonthYear(day)} ${day.getDate()}, ${
+                            aria-label={`${formatMonthYear(day)} ${dayLabel}, ${
                                 dayOccurrences.length
                             } dose${dayOccurrences.length === 1 ? "" : "s"}`}
                             className={cn(
@@ -211,7 +212,7 @@ export function ScheduleCalendar({
                                 isToday && !isSelected && "border-ring font-semibold"
                             )}
                         >
-                            <span>{day.getDate()}</span>
+                            <span>{dayLabel}</span>
                             {dayOccurrences.length > 0 && (
                                 <span className="flex items-center gap-0.5">
                                     {visible.map((occurrence) => {
@@ -253,7 +254,7 @@ export function ScheduleCalendar({
                     {selectedDate.toLocaleDateString(undefined, {
                         weekday: "long",
                         month: "long",
-                        day: "numeric",
+                        day: "2-digit",
                         year: "numeric",
                     })}
                 </p>

@@ -140,12 +140,12 @@ export function isSameLocalDay(a: Date, b: Date): boolean {
 const fullDateFormatter = new Intl.DateTimeFormat(undefined, {
     weekday: "short",
     month: "short",
-    day: "numeric",
+    day: "2-digit",
 });
 const monthFormatter = new Intl.DateTimeFormat(undefined, {
     weekday: "short",
     month: "short",
-    day: "numeric",
+    day: "2-digit",
     year: "numeric",
 });
 const monthHeaderFormatter = new Intl.DateTimeFormat(undefined, {
@@ -153,16 +153,16 @@ const monthHeaderFormatter = new Intl.DateTimeFormat(undefined, {
     year: "numeric",
 });
 const timeFormatter = new Intl.DateTimeFormat(undefined, {
-    hour: "numeric",
+    hour: "2-digit",
     minute: "2-digit",
 });
 
-/** e.g. "Thu, Oct 29" — for agenda lines. */
+/** e.g. "Thu, Oct 09" — for agenda lines. */
 export function formatDay(date: Date): string {
     return fullDateFormatter.format(startOfLocalDay(date));
 }
 
-/** e.g. "Thu, Oct 29, 2026" — for calendar headers. */
+/** e.g. "Thu, Oct 09, 2026" — for calendar headers. */
 export function formatDayWithYear(date: Date): string {
     return monthFormatter.format(startOfLocalDay(date));
 }
@@ -172,26 +172,26 @@ export function formatMonthYear(date: Date): string {
     return monthHeaderFormatter.format(startOfLocalDay(date));
 }
 
-/** Local clock time of an instant, e.g. "8:00 AM". */
+/** Local clock time of an instant, e.g. "08:00 AM". */
 export function formatClockTime(date: Date): string {
     return timeFormatter.format(date);
 }
 
 const shortDateFormatter = new Intl.DateTimeFormat(undefined, {
     month: "short",
-    day: "numeric",
+    day: "2-digit",
     year: "numeric",
 });
 
 /**
  * Compact "date, time" for single-line history rows, year always included,
- * e.g. "31 Oct 2026, 8:59 AM".
+ * e.g. "31 Oct 2026, 08:59 AM".
  */
 export function formatDateTimeCompact(date: Date): string {
     return `${shortDateFormatter.format(date)}, ${formatClockTime(date)}`;
 }
 
-/** Relative label for an upcoming day: "Today" / "Tomorrow" / "in 5 days" / "Oct 2". */
+/** Relative label for an upcoming day: "Today" / "Tomorrow" / "in 5 days" / "Oct 02". */
 export function formatRelativeDay(date: Date, now = new Date()): string {
     const difference = diffDays(now, date);
     if (difference === 0) return "Today";
