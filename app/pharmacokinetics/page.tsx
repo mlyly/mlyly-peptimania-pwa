@@ -1,6 +1,6 @@
 import type {Metadata} from "next";
 
-import {BackButton} from "@/components/app/back-button";
+import {HomeLink} from "@/components/app/home-link";
 import {HomeNav} from "@/components/app/home-nav";
 import {PkChartDashboard} from "@/components/pharmacokinetics/pk-chart-dashboard";
 
@@ -15,7 +15,7 @@ export default function PharmacokineticsPage() {
         <div className="flex flex-1 flex-col items-center gap-8 px-4 py-12">
             <header className="flex w-full max-w-5xl flex-col gap-3">
                 <div className="flex items-center gap-1">
-                    <BackButton/>
+                    <HomeLink/>
                     <h1 className="shrink-0 text-2xl font-semibold tracking-tight">
                         Concentration Chart
                     </h1>
