@@ -354,6 +354,66 @@ function MedicationForm({medication, schedules, onSaved, onCancel}: MedicationFo
                             </FormItem>
                         )}
                     />
+
+                    <FormField
+                        control={form.control}
+                        name="absorptionHalfLifeHours"
+                        render={({field}) => (
+                            <FormItem>
+                                <FormLabel>
+                                    Absorption half-life{" "}
+                                    <span className="text-muted-foreground font-normal">
+                                        (optional)
+                                    </span>
+                                </FormLabel>
+                                <div className="relative">
+                                    <FormControl>
+                                        <Input
+                                            inputMode="decimal"
+                                            placeholder="1"
+                                            className="pr-14"
+                                            {...field}
+                                        />
+                                    </FormControl>
+                                    <Suffix unit="hours"/>
+                                </div>
+                                <FormDescription>
+                                    For oral/subcutaneous absorption phases (first-order absorption).
+                                </FormDescription>
+                                <FormMessage/>
+                            </FormItem>
+                        )}
+                    />
+
+                    <FormField
+                        control={form.control}
+                        name="absorptionRatePerHour"
+                        render={({field}) => (
+                            <FormItem>
+                                <FormLabel>
+                                    Absorption rate{" "}
+                                    <span className="text-muted-foreground font-normal">
+                                        (optional)
+                                    </span>
+                                </FormLabel>
+                                <div className="relative">
+                                    <FormControl>
+                                        <Input
+                                            inputMode="decimal"
+                                            placeholder="0.693"
+                                            className="pr-14"
+                                            {...field}
+                                        />
+                                    </FormControl>
+                                    <Suffix unit="h⁻¹"/>
+                                </div>
+                                <FormDescription>
+                                    Alternatively set k_a directly (takes precedence if both set).
+                                </FormDescription>
+                                <FormMessage/>
+                            </FormItem>
+                        )}
+                    />
                 </div>
 
                 <Separator/>

@@ -96,7 +96,7 @@ async function main() {
     const result = await ensureDatabase();
     check(
         "fresh database lands at v8",
-        LATEST_SCHEMA_VERSION === 8 && result.to === 8,
+        LATEST_SCHEMA_VERSION === 9 && result.to === 9,
         `to=${result.to}`
     );
 

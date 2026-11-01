@@ -338,8 +338,8 @@ async function main() {
     // ============================================================ v3 → v8 migration
     await ensureDatabase();
     check(
-        "fresh database stamps the current schema v8",
-        LATEST_SCHEMA_VERSION === 8 && (await ensureDatabase()).to === 8
+        "fresh database stamps the current schema v9",
+        LATEST_SCHEMA_VERSION === 9 && (await ensureDatabase()).to === 9
     );
 
     // Simulate a v3-era database: meta says 3, with a pre-v4 dose log

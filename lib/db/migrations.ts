@@ -30,7 +30,7 @@ export interface SchemaVersion {
     stores: Record<string, string>;
 }
 
-export const LATEST_SCHEMA_VERSION = 8;
+export const LATEST_SCHEMA_VERSION = 9;
 
 /**
  * Index declarations. Primary keys (`id`) are non-indexed UUIDs; other fields
@@ -107,6 +107,13 @@ export const SCHEMA_VERSIONS: SchemaVersion[] = [
         stores: {
             settings: "key",
         },
+    },
+    {
+        // v9 adds optional absorption parameters to medications for more accurate
+        // PK modeling (oral/subcutaneous absorption phases). Additive — existing
+        // rows remain valid with absent fields.
+        version: 9,
+        stores: {},
     },
 ];
 
@@ -460,6 +467,20 @@ export const MIGRATIONS: Migration[] = [
             // so the import path sees an empty list.
             const snapshot = data as { settings?: unknown };
             if (!Array.isArray(snapshot.settings)) snapshot.settings = [];
+        },
+    },
+    {
+        version: 9,
+        description:
+            "Pharmacokinetics: medications gain optional absorption parameters " +
+            "(absorptionRatePerHour/absorptionHalfLifeHours) for first-order " +
+            "absorption modeling in concentration curves. Additive.",
+        up: () => {
+            // Additive optional fields: nothing to transform on the live database.
+        },
+        upSnapshot: () => {
+            // Additive optional fields: import payloads from older versions are
+            // accepted as-is.
         },
     },
 ];

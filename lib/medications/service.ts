@@ -62,7 +62,7 @@ export async function getMedication(id: string): Promise<Medication | undefined>
 }
 
 export async function createMedication(input: MedicationInput): Promise<Medication> {
-    const parsed = medicationInputSchema.parse(input);
+    const parsed = medicationInputSchema.parse(input) as any;
     const timestamp = nowIso();
     const medication: Medication = {
         id: newId(),
@@ -72,10 +72,12 @@ export async function createMedication(input: MedicationInput): Promise<Medicati
         reconstitution: parsed.reconstitution,
         inventory: inventoryFromInput(parsed),
         halfLifeHours: parsed.halfLifeHours,
+        absorptionRatePerHour: parsed.absorptionRatePerHour,
+        absorptionHalfLifeHours: parsed.absorptionHalfLifeHours,
         notes: parsed.notes,
         createdAt: timestamp,
         updatedAt: timestamp,
-    };
+    } as Medication;
     await db.medications.put(medication);
     return medication;
 }
@@ -84,7 +86,7 @@ export async function updateMedication(
     id: string,
     input: MedicationInput
 ): Promise<Medication> {
-    const parsed = medicationInputSchema.parse(input);
+    const parsed = medicationInputSchema.parse(input) as any;
     const existing = await db.medications.get(id);
     if (!existing) throw new Error("Medication not found — it may have been deleted.");
 
@@ -98,10 +100,12 @@ export async function updateMedication(
         reconstitution: parsed.reconstitution,
         inventory: inventoryFromInput(parsed),
         halfLifeHours: parsed.halfLifeHours,
+        absorptionRatePerHour: parsed.absorptionRatePerHour,
+        absorptionHalfLifeHours: parsed.absorptionHalfLifeHours,
         notes: parsed.notes,
         createdAt: existing.createdAt,
         updatedAt: nowIso(),
-    };
+    } as Medication;
     await db.medications.put(medication);
     return medication;
 }

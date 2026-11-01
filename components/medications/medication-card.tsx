@@ -140,6 +140,18 @@ export function MedicationCard({
                                         t½ {formatNumber(medication.halfLifeHours)} h
                                     </span>
                                 )}
+                                {(medication as any).absorptionHalfLifeHours !== undefined && (
+                                    <span className="text-muted-foreground inline-flex items-center gap-1 text-xs">
+                                        <Timer className="size-3 shrink-0" aria-hidden/>
+                                        k_a t½ {formatNumber((medication as any).absorptionHalfLifeHours)} h
+                                    </span>
+                                )}
+                                {(medication as any).absorptionRatePerHour !== undefined && (medication as any).absorptionHalfLifeHours === undefined && (
+                                    <span className="text-muted-foreground inline-flex items-center gap-1 text-xs">
+                                        <Timer className="size-3 shrink-0" aria-hidden/>
+                                        k_a {formatNumber((medication as any).absorptionRatePerHour)} h⁻¹
+                                    </span>
+                                )}
                                 {active.length > 0 && (
                                     <span className="text-muted-foreground inline-flex items-center gap-1 text-xs">
                                         <CalendarClock className="size-3 shrink-0" aria-hidden/>

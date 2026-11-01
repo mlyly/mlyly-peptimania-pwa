@@ -146,7 +146,7 @@ export function buildPkConcentrationSeries(
 
 /**
  * Merges layers in precedence order: default profile → medication's persisted
- * half-life → per-call override. A medication-level half-life deliberately
+ * half-life/absorption → per-call override. A medication-level half-life deliberately
  * clears a default rate constant, and an override half-life clears any rate
  * beneath it, mirroring `resolvePkProfile`'s "rate wins when both are present"
  * rule.
@@ -159,6 +159,14 @@ function mergeProfile(medication: Medication, options: PkBuildOptions): PkProfil
         profile.eliminationRatePerHour = undefined;
     }
 
+    if ((medication as any).absorptionRatePerHour !== undefined) {
+        (profile as any).absorptionRatePerHour = (medication as any).absorptionRatePerHour;
+        (profile as any).absorptionHalfLifeHours = undefined;
+    } else if ((medication as any).absorptionHalfLifeHours !== undefined) {
+        (profile as any).absorptionHalfLifeHours = (medication as any).absorptionHalfLifeHours;
+        (profile as any).absorptionRatePerHour = undefined;
+    }
+
     const override = options.profiles?.[medication.id];
     if (override) {
         profile = {...profile, ...override};
@@ -167,6 +175,12 @@ function mergeProfile(medication: Medication, options: PkBuildOptions): PkProfil
             override.eliminationRatePerHour === undefined
         ) {
             profile.eliminationRatePerHour = undefined;
+        }
+        if (
+            (override as any).absorptionHalfLifeHours !== undefined &&
+            (override as any).absorptionRatePerHour === undefined
+        ) {
+            (profile as any).absorptionRatePerHour = undefined;
         }
     }
 

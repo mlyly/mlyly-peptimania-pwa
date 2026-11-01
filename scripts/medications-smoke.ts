@@ -81,8 +81,8 @@ async function main() {
     // ------------------------------------------------------------ v8
     const result = await ensureDatabase();
     check(
-        "fresh database stamps schema v8",
-        result.to === LATEST_SCHEMA_VERSION && LATEST_SCHEMA_VERSION === 8,
+        "fresh database stamps schema v9",
+        result.to === LATEST_SCHEMA_VERSION && LATEST_SCHEMA_VERSION === 9,
         `got ${result.to}`
     );
 

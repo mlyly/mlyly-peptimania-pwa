@@ -76,6 +76,10 @@ export interface Medication {
     inventory: MedicationInventory;
 
     halfLifeHours?: number;
+    /** Rate of absorption in hours⁻¹ (first-order absorption constant). */
+    absorptionRatePerHour?: number;
+    /** Absorption half-life in hours (alternative to absorptionRatePerHour). */
+    absorptionHalfLifeHours?: number;
     notes?: string;
     createdAt: string;
     updatedAt: string;

@@ -139,6 +139,16 @@ export const medicationInputSchema = z.object({
         .positive("Half-life must be greater than zero")
         .max(100000, "Half-life looks too large")
         .optional(),
+    absorptionRatePerHour: z
+        .number()
+        .positive("Absorption rate must be greater than zero")
+        .max(100000, "Absorption rate looks too large")
+        .optional(),
+    absorptionHalfLifeHours: z
+        .number()
+        .positive("Absorption half-life must be greater than zero")
+        .max(100000, "Absorption half-life looks too large")
+        .optional(),
     inventory: z.object({
         lots: z.array(inventoryLotInputSchema).max(50, "Keep it to 50 inventory lots"),
         lowStockThreshold: z
@@ -194,6 +204,8 @@ export const medicationFormSchema = z
         unit: z.enum(DOSE_UNITS),
         // Optional numeric inputs — "" means "not set"; validated in superRefine.
         halfLifeHours: z.string(),
+        absorptionRatePerHour: z.string(),
+        absorptionHalfLifeHours: z.string(),
         inventoryLots: z.array(inventoryLotFormSchema).max(50, "Keep it to 50 inventory lots"),
         lowStockThreshold: z.string(),
         hasReconstitution: z.boolean(),
@@ -260,6 +272,16 @@ export const medicationFormSchema = z
         });
         checkNumeric(ctx, ["halfLifeHours"], values.halfLifeHours, {
             label: "Half-life",
+            positive: true,
+            max: 100000,
+        });
+        checkNumeric(ctx, ["absorptionRatePerHour"], values.absorptionRatePerHour, {
+            label: "Absorption rate",
+            positive: true,
+            max: 100000,
+        });
+        checkNumeric(ctx, ["absorptionHalfLifeHours"], values.absorptionHalfLifeHours, {
+            label: "Absorption half-life",
             positive: true,
             max: 100000,
         });
@@ -398,6 +420,8 @@ export function medicationToFormValues(medication?: Medication): MedicationFormV
             type: "peptide",
             unit: "mg",
             halfLifeHours: "",
+            absorptionRatePerHour: "",
+            absorptionHalfLifeHours: "",
             inventoryLots: [newInventoryLotFormValues("mg")],
             lowStockThreshold: "",
             hasReconstitution: false,
@@ -412,6 +436,8 @@ export function medicationToFormValues(medication?: Medication): MedicationFormV
         type: medication.type,
         unit: medication.unit,
         halfLifeHours: medication.halfLifeHours?.toString() ?? "",
+        absorptionRatePerHour: (medication as any).absorptionRatePerHour?.toString() ?? "",
+        absorptionHalfLifeHours: (medication as any).absorptionHalfLifeHours?.toString() ?? "",
         inventoryLots: medication.inventory.lots.map((lot) => ({
             id: lot.id,
             vialCount: lot.vialCount.toString(),
@@ -442,6 +468,8 @@ export function toMedicationInput(values: MedicationFormValues): MedicationInput
         type: values.type,
         unit: values.unit,
         halfLifeHours: parseFormNumber(values.halfLifeHours),
+        absorptionRatePerHour: parseFormNumber((values as any).absorptionRatePerHour),
+        absorptionHalfLifeHours: parseFormNumber((values as any).absorptionHalfLifeHours),
         inventory: {
             lots: values.inventoryLots.map((lot) => {
                 const coaUrls = parseCoaUrls(lot.coaUrlsText);

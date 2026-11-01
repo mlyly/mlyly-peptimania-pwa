@@ -91,12 +91,44 @@ export function resolvePkProfile(profile: PkProfile): PkProfileResolution {
         };
     }
 
+    let absorptionRatePerHour: number | undefined;
+    if (profile.absorptionRatePerHour !== undefined) {
+        if (
+            !Number.isFinite(profile.absorptionRatePerHour) ||
+            profile.absorptionRatePerHour <= 0
+        ) {
+            return {
+                ok: false,
+                code: "invalid-elimination-rate",
+                message: "Absorption rate must be a positive, finite number (h⁻¹).",
+            };
+        }
+        absorptionRatePerHour = profile.absorptionRatePerHour;
+    } else if (profile.absorptionHalfLifeHours !== undefined) {
+        if (
+            !Number.isFinite(profile.absorptionHalfLifeHours) ||
+            profile.absorptionHalfLifeHours <= 0
+        ) {
+            return {
+                ok: false,
+                code: "invalid-half-life",
+                message: "Absorption half-life must be a positive, finite number of hours.",
+            };
+        }
+        absorptionRatePerHour = halfLifeToRate(profile.absorptionHalfLifeHours);
+    }
+
     const volume = profile.volumeOfDistributionL;
     return {
         ok: true,
         profile: {
             halfLifeHours: rateToHalfLife(rate),
             eliminationRatePerHour: rate,
+            absorptionRatePerHour,
+            absorptionHalfLifeHours:
+                absorptionRatePerHour !== undefined
+                    ? rateToHalfLife(absorptionRatePerHour)
+                    : undefined,
             bioavailability,
             volumeOfDistributionL: volume,
             concentrationPerMg: bioavailability / (volume ?? 1),
@@ -133,6 +165,27 @@ export function doseContribution(
 ): number {
     const elapsedHours = (atMs - dose.timestamp) / MS_PER_HOUR;
     if (elapsedHours < 0) return 0;
+    if (profile.absorptionRatePerHour !== undefined) {
+        const ka = profile.absorptionRatePerHour;
+        const ke = profile.eliminationRatePerHour;
+        if (Math.abs(ka - ke) < 1e-18) {
+            // Approximate when rates are extremely close to avoid division by zero
+            return (
+                dose.amountMg *
+                profile.concentrationPerMg *
+                ka *
+                elapsedHours *
+                Math.exp(-ke * elapsedHours)
+            );
+        }
+        return (
+            (dose.amountMg *
+                profile.concentrationPerMg *
+                ka) /
+            (ka - ke) *
+            (Math.exp(-ke * elapsedHours) - Math.exp(-ka * elapsedHours))
+        );
+    }
     return (
         dose.amountMg *
         profile.concentrationPerMg *
@@ -174,6 +227,23 @@ export function concentrationSeries(
 
     const sorted = ensureSorted(doses);
     const out = new Array<number>(sampleTimes.length);
+
+    if (profile.absorptionRatePerHour !== undefined) {
+        for (let i = 0; i < sampleTimes.length; i += 1) {
+            const time = sampleTimes[i];
+            if (!Number.isFinite(time)) {
+                throw new RangeError("Sample times must be finite epoch milliseconds.");
+            }
+            let total = 0;
+            for (const dose of sorted) {
+                if (dose.timestamp > time) break;
+                total += doseContribution(profile, dose, time);
+            }
+            out[i] = total;
+        }
+        return out;
+    }
+
     const rate = profile.eliminationRatePerHour;
 
     let index = 0;

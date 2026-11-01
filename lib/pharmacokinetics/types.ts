@@ -32,6 +32,10 @@ export interface PkProfile {
     halfLifeHours?: number;
     /** First-order elimination rate λ in h⁻¹. */
     eliminationRatePerHour?: number;
+    /** First-order absorption rate constant k_a in h⁻¹. */
+    absorptionRatePerHour?: number;
+    /** Absorption half-life in hours (alternative to absorptionRatePerHour). */
+    absorptionHalfLifeHours?: number;
     /**
      * Fraction of the dose that reaches systemic circulation, 0 < F ≤ 1.
      * Defaults to 1 (complete bioavailability).
@@ -48,6 +52,8 @@ export interface PkProfile {
 export interface ResolvedPkProfile {
     halfLifeHours: number;
     eliminationRatePerHour: number;
+    absorptionRatePerHour?: number;
+    absorptionHalfLifeHours?: number;
     bioavailability: number;
     volumeOfDistributionL?: number;
     /** Multiplier turning a dose in mg into concentration units (F / V). */
