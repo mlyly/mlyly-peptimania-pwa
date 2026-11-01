@@ -1,36 +1,153 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Peptimania — Peptide & Medication Tracker
+
+A privacy-first, offline-capable Progressive Web App (PWA) for tracking medications, peptides, and supplements. **All
+data stays in your browser** — nothing is transmitted to external servers. Built with Next.js, React, Tailwind CSS,
+shadcn/ui, and Dexie (IndexedDB).
+
+## What It Does
+
+Peptimania helps you manage your medication/peptide regimen with:
+
+- **Medication Management** - Track peptides, injections, pills, liquids, supplements, and other medications with custom
+  units (mg, mcg, IU, mL, pcs)
+- **Reconstitution Tracking** - For peptides, calculate dose volumes from vial quantities and bacteriostatic water
+  amounts with built-in syringe visual guidance
+- **Inventory Management** - Track stock across multiple purchase lots with vial counts, content per vial, vendor info,
+  COA links, order/delivery dates, pricing, and low-stock thresholds
+- **Scheduling & Dosing** - Create flexible schedules (daily, weekly with specific days, or custom intervals) with
+  reminders shown on the dashboard
+- **Dose Logging** - Log doses from schedules or ad-hoc, with optional injection site tracking (presets + custom) and
+  notes
+- **Pharmacokinetic Modeling** - Interactive concentration charts using first-order elimination (single-compartment
+  model) combining logged doses and scheduled doses to project future concentrations
+- **Body Measurements** - Track weight, blood pressure (stored as systolic/diastolic pairs), and custom metrics with
+  trend visualization
+- **Data Control** - Full JSON export/import with schema versioning, automatic pre-migration backups, and secure local
+  storage management
+
+## How It Works
+
+### Architecture
+
+- **Frontend**: Next.js 16 (App Router, static export) with React 19, TypeScript
+- **UI Components**: shadcn/ui built on Radix UI primitives with Tailwind CSS v4
+- **Data Storage**: Dexie.js over IndexedDB for all application data, LocalStorage for preferences
+- **Charts**: Recharts for pharmacokinetic curves and measurement trends
+- **PWA**: Serwist service worker for offline functionality and caching
+- **Forms**: React Hook Form with Zod validation
+
+### Privacy & Offline-First
+
+- **Zero network dependencies** for user data - everything persists locally in your browser
+- **Fully offline capable** - works without internet after initial load
+- **Installable PWA** - can be installed on desktop/mobile for app-like experience
+- **Data sovereignty** - you control all data via export/import; no accounts or telemetry
+
+### Schema & Migrations
+
+The app uses a robust migration system to evolve without breaking existing data:
+
+- Schema version tracked in `meta` store (currently v8)
+- Sequential migrations with data transformations
+- Automatic pre-migration backups before upgrades
+- Snapshot migration support for imports from older versions
+- Migrations are idempotent and safe to resume after crashes
+
+Key schema evolution:
+
+- **v1→v2**: Granular medication types, mL units, inventory container sizes
+- **v2→v3**: Weekly schedule day selection, dose log occurrence matching (`scheduledFor`), local date normalization
+- **v3→v4**: Optional injection site on dose logs
+- **v4→v5**: Blood pressure measurement support with value kind tracking
+- **v5→v6**: Inventory converted from single aggregate to multiple lots
+- **v6→v7**: Lot pricing (`pricePerContainer` in USD)
+- **v7→v8**: App settings store for UI preferences
+
+### Pharmacokinetics
+
+Concentration is calculated using the single-compartment first-order elimination model:
+
+- Formula: `C(t) = Σ C_i * e^(-λ(t - t_i))` where `λ = ln(2)/t½`
+- Combines past dose logs and future scheduled doses
+- Supports time windows: 24h, 1W, 2W, 1M, 2M, 3M, 6M
+- Toggleable multi-medication overlays
+- Display units convertible between mcg/mg/IU
+
+### Unit System
+
+- **Mass**: mg, mcg, IU (with conversion utilities)
+- **Volume**: mL (requires reconstitution context)
+- **Count**: pcs (pills/capsules, no cross-unit conversion)
+- All calculations normalize internally while preserving display preferences
 
 ## Getting Started
 
-First, run the development server:
+### Prerequisites
+
+- Node.js >= 26.0.0
+- A modern browser with IndexedDB support
+
+### Development
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000) to see the app.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Build & Production
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm run build  # Builds Next.js static export + service worker
+npm start      # Serves the static export from ./out
+```
 
-## Learn More
+The app builds as a static site (`output: 'export'`) - it can be hosted anywhere that serves static files.
 
-To learn more about Next.js, take a look at the following resources:
+### Project Structure
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```
+app/                    # Next.js App Router pages
+├── page.tsx           # Dashboard with today's doses
+├── medications/       # Medication CRUD & inventory
+├── schedules/         # Schedule management
+├── dose-logs/         # Dose history
+├── pharmacokinetics/  # Concentration charts
+├── measurements/      # Body metrics tracking
+└── settings/          # Data export/import, storage, app info
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+components/            # React components (shadcn/ui based)
+lib/
+├── db/               # Database schema, migrations, Dexie setup
+├── medications/      # Medication logic & utilities
+├── pharmacokinetics/ # PK calculations
+├── scheduling/       # Schedule/occurrence logic
+├── measurements/     # Measurement handling
+└── settings/         # Settings management
 
-## Deploy on Vercel
+public/               # Static assets, manifest, icons
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Key Features in Detail
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- **Dashboard**: Quick view of today's scheduled doses with one-tap logging
+- **Medication Details**: Reconstitution calculator, inventory lot management, pricing, COA links
+- **Smart Scheduling**: Handles complex patterns with weekly day selection and custom intervals
+- **Dose History**: Full log with filtering, editing, and injection site tracking
+- **PK Charts**: Compare multiple medications, adjust time ranges, see projected vs actual concentrations
+- **Measurements**: Numeric values or blood pressure pairs with trend graphs
+- **Settings**: Storage usage, data export/import, theme preferences, app information
+
+## Data Safety
+
+- **Local-first**: All data in IndexedDB under the database name `peptimania`
+- **Backups**: Pre-migration backups stored automatically before schema upgrades
+- **Export/Import**: JSON format with schema version and checksum validation
+- **Migration safety**: Sequential, resumable migrations with rollback protection
+- **Storage monitoring**: Quota awareness with user-friendly messages
+
+## License & Usage
+
+This is a personal health tracking tool. Use at your own discretion. Always consult healthcare professionals for medical
+advice — this app is for tracking only, not medical guidance.
