@@ -19,8 +19,8 @@ type Phase =
 const EMPTY: MeasurementsData = {types: [], logs: []};
 
 /** Lightweight UI preferences (AGENTS.md §2.1) live in LocalStorage. */
-const SELECTED_KEY = "pepmania.measurements.selectedTypeId";
-const RANGE_KEY = "pepmania.measurements.range";
+const SELECTED_KEY = "peptimania.measurements.selectedTypeId";
+const RANGE_KEY = "peptimania.measurements.range";
 
 const RANGE_VALUES: readonly TrendRange[] = ["1W", "1M", "3M", "6M", "1Y", "all"];
 

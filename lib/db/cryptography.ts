@@ -6,8 +6,8 @@
  *
  * ```json
  * {
- *   "app": "pepmania-pwa",
- *   "kind": "pepmania-encrypted-export",
+ *   "app": "peptimania-pwa",
+ *   "kind": "peptimania-encrypted-export",
  *   "v": 1,
  *   "kdf": { "name": "PBKDF2", "hash": "SHA-256", "iterations": 600000, "salt": "<b64>" },
  *   "cipher": { "name": "AES-GCM", "iv": "<b64>" },
@@ -30,7 +30,7 @@ const IV_BYTES = 12; // 96-bit IV — standard for AES-GCM.
 const SALT_BYTES = 16;
 const KEY_LENGTH_BITS = 256;
 
-export const ENVELOPE_KIND = "pepmania-encrypted-export";
+export const ENVELOPE_KIND = "peptimania-encrypted-export";
 export const ENVELOPE_VERSION = 1;
 
 export type CryptoErrorCode =

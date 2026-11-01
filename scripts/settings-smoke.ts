@@ -91,7 +91,7 @@ async function main() {
         measurementLogs: [],
     };
     const legacyPayload = {
-        app: "pepmania-pwa",
+        app: "peptimania-pwa",
         formatVersion: 1,
         exportedAt: new Date().toISOString(),
         data: legacyData,

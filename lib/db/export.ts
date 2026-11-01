@@ -7,7 +7,7 @@ import type {DatabaseSnapshot} from "./types";
 // Re-exported for callers that need the migration contract alongside exports.
 export type {Migration} from "./migrations";
 
-export const EXPORT_APP_ID = "pepmania-pwa";
+export const EXPORT_APP_ID = "peptimania-pwa";
 export const EXPORT_FORMAT_VERSION = 1;
 
 interface ExportData {

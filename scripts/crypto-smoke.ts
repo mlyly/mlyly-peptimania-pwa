@@ -28,7 +28,7 @@ async function expectError(label: string, fn: () => Promise<unknown>) {
 }
 
 async function main() {
-    const payload = {app: "pepmania-pwa", checksum: "abc", data: {msg: "héllo ☕"}};
+    const payload = {app: "peptimania-pwa", checksum: "abc", data: {msg: "héllo ☕"}};
 
     const envelope = await encryptJson(payload, "correct horse battery staple");
     if (envelope.v !== ENVELOPE_VERSION) {
