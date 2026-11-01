@@ -25,6 +25,38 @@ Peptimania helps you manage your medication/peptide regimen with:
 - **Data Control** - Full JSON export/import with schema versioning, automatic pre-migration backups, and secure local
   storage management
 
+## Screenshots
+
+### Dashboard & Scheduling
+
+| Today's doses on the dashboard                        | Schedules — Today tab                                     |
+|-------------------------------------------------------|-----------------------------------------------------------|
+| ![Dashboard](images/peptimania_main_todays_doses.png) | ![Schedules today](images/medication_schedules_today.png) |
+| **Schedules — Calendar view**                         | **Schedules — list & toggles**                            |
+| ![Calendar](images/medication_schedules_calendar.png) | ![Schedules](images/medication_schedules.png)             |
+
+### Dose Log
+
+![Dose log](images/dose_log.png)
+
+### Pharmacokinetic Concentration Chart
+
+| Estimated concentration curve                     | Chart settings                                      |
+|---------------------------------------------------|-----------------------------------------------------|
+| ![Chart](images/concentraton_estimated_chart.png) | ![Settings](images/concentraton_chart_settings.png) |
+
+### Body Measurements
+
+| Weight trend                              | Blood pressure                                                |
+|-------------------------------------------|---------------------------------------------------------------|
+| ![Weight](images/body_metrics_weight.png) | ![Blood pressure](images/body_metrics_bloodpressure.png)      |
+| **Waist circumference**                   | **Adding a custom tracker**                                   |
+| ![Waist](images/body_metrics_waist.png)   | ![Custom tracker](images/body_metrics_add_custom_tracker.png) |
+
+### Settings — Backup & Restore
+
+![Backup and restore](images/settings_backup_and_restore.png)
+
 ## How It Works
 
 ### Architecture
