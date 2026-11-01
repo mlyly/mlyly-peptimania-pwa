@@ -71,7 +71,9 @@ To handle future app updates without breaking user data:
 >
 > **v8 (current):** a new `settings` store holds application-configuration
 > entries — one `{key, value}` row per toggleable feature setting (chart time
-> range, chart display unit, hidden medications on the concentration chart).
+> range, chart display unit, hidden medications on the concentration chart)
+> plus the `legal.termsAcceptedAt` acknowledgement record shown by the startup
+> Terms gate (re-confirmed every 30 days; excluded from "restore defaults").
 > Value shapes are declared and validated per key by
 > `lib/settings/definitions.ts`; a missing or invalid entry falls back to the
 > app default, and unknown keys are ignored (forward compatible). Settings are

@@ -38,7 +38,12 @@ export async function clearSetting(key: SettingKey): Promise<void> {
     await db.settings.delete(key);
 }
 
-/** Removes every recognized setting entry, restoring app defaults. */
+/**
+ * Removes every toggleable *feature* setting entry, restoring app defaults.
+ * `legal.*` entries (e.g. the terms acceptance record) are deliberately not
+ * reset — they are acknowledgements, not UI preferences.
+ */
 export async function resetAllSettings(): Promise<void> {
-    await db.settings.bulkDelete(SETTING_KEYS);
+    const featureKeys = SETTING_KEYS.filter((key) => !key.startsWith("legal."));
+    await db.settings.bulkDelete(featureKeys);
 }

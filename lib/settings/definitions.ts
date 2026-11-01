@@ -15,7 +15,11 @@ import {
     type ConcentrationDisplayUnit,
 } from "@/lib/pharmacokinetics/charting";
 
-export type SettingKey = "pk.chartRange" | "pk.chartUnit" | "pk.hiddenMedicationIds";
+export type SettingKey =
+    | "pk.chartRange"
+    | "pk.chartUnit"
+    | "pk.hiddenMedicationIds"
+    | "legal.termsAcceptedAt";
 
 /** Typed view of every known setting, merged with its default. */
 export interface AppSettings {
@@ -23,6 +27,12 @@ export interface AppSettings {
     "pk.chartUnit": ConcentrationDisplayUnit;
     /** Medication ids hidden on the concentration chart (all shown by default). */
     "pk.hiddenMedicationIds": string[];
+    /**
+     * ISO timestamp of the last time the user accepted the Terms of Service
+     * and Legal Disclaimer (see `public/TERMS.md`). `null` means never
+     * accepted — the startup gate re-appears. Read via `lib/legal/terms.ts`.
+     */
+    "legal.termsAcceptedAt": string | null;
 }
 
 const CHART_RANGE_IDS: readonly string[] = CHART_RANGES.map((range) => range.id);
@@ -32,6 +42,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     "pk.chartRange": "week",
     "pk.chartUnit": "mcg",
     "pk.hiddenMedicationIds": [],
+    "legal.termsAcceptedAt": null,
 };
 
 interface SettingDefinition<K extends SettingKey = SettingKey> {
@@ -65,6 +76,15 @@ const definitions: { [K in SettingKey]: SettingDefinition<K> } = {
             Array.isArray(raw)
                 ? raw.filter((id): id is string => typeof id === "string")
                 : DEFAULT_SETTINGS["pk.hiddenMedicationIds"],
+    },
+    "legal.termsAcceptedAt": {
+        key: "legal.termsAcceptedAt",
+        description: "ISO timestamp of the last Terms & Legal Disclaimer acceptance",
+        parse: (raw) => {
+            if (typeof raw !== "string") return null;
+            const time = Date.parse(raw);
+            return Number.isFinite(time) ? new Date(time).toISOString() : null;
+        },
     },
 };
 

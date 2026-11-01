@@ -19,7 +19,7 @@ import {
     validateExportPayload,
     writeImportedPayload,
 } from "../lib/db";
-import {DEFAULT_SETTINGS, getSetting, loadSettings, resetAllSettings, setSetting,} from "../lib/settings";
+import {DEFAULT_SETTINGS, getSetting, loadSettings, resetAllSettings, setSetting, SETTING_KEYS,} from "../lib/settings";
 
 let failed = false;
 
@@ -63,7 +63,10 @@ async function main() {
         sanitized["pk.chartRange"] === DEFAULT_SETTINGS["pk.chartRange"]
     );
     check("junk array entries dropped", sanitized["pk.hiddenMedicationIds"].join(",") === "med-9");
-    check("unknown key ignored", Object.keys(sanitized).length === 3);
+    check(
+        "unknown key ignored",
+        !("some.future.key" in sanitized) && Object.keys(sanitized).length === SETTING_KEYS.length
+    );
 
     // 4. Export includes settings rows; wipe + reimport restores them.
     await setSetting("pk.chartRange", "2months");

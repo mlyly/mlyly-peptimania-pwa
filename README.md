@@ -179,7 +179,24 @@ public/               # Static assets, manifest, icons
 - **Migration safety**: Sequential, resumable migrations with rollback protection
 - **Storage monitoring**: Quota awareness with user-friendly messages
 
-## License & Usage
+## License & Legal
 
-This is a personal health tracking tool. Use at your own discretion. Always consult healthcare professionals for medical
-advice — this app is for tracking only, not medical guidance.
+See [TERMS.md](public/TERMS.md) for the full Terms of Service, Legal Disclaimer, and
+licensing notice. In short:
+
+- **First-run acceptance.** On first start (and every 30 days afterwards), the app shows
+  these terms and requires an "I have read and agree" checkbox before you can continue.
+  The acceptance time is stored locally as the `legal.termsAcceptedAt` setting — it is
+  never transmitted anywhere.
+- **No responsibility, no liability, no endorsement.** The app does not endorse or
+  encourage peptide or medication use, provides no medical advice, and its calculations
+  are approximations you verify yourself. The authors accept no liability of any kind
+  for anything arising from use of the app.
+- **"AS IS" / "AS AVAILABLE".** The software comes with absolutely no warranties.
+- **No copyright — do whatever you want.** The software is free and dedicated to the
+  public domain (with a permissive fallback where required by law): you may use, modify,
+  distribute, and sell it without permission or attribution.
+
+This is a personal health tracking tool. Use at your own discretion. Always consult
+healthcare professionals for medical advice — this app is for tracking only, not medical
+guidance.
