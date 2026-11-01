@@ -1,18 +1,7 @@
 "use client";
 
 import * as React from "react";
-import {
-    AlertCircle,
-    CheckCircle2,
-    Download,
-    FileJson,
-    FileLock,
-    FileUp,
-    Lock,
-    RotateCcw,
-    ShieldAlert,
-    Trash2,
-} from "lucide-react";
+import {AlertCircle, Download, FileJson, FileLock, FileUp, Lock, RotateCcw, ShieldAlert, Trash2,} from "lucide-react";
 
 import {ConfirmDialog} from "@/components/app/confirm-dialog";
 import {Badge} from "@/components/ui/badge";
@@ -20,6 +9,7 @@ import {Button} from "@/components/ui/button";
 import {Card, CardContent, CardDescription, CardHeader, CardTitle} from "@/components/ui/card";
 import {Input} from "@/components/ui/input";
 import {Label} from "@/components/ui/label";
+import {toast} from "@/lib/toast";
 import {
     buildExportPayload,
     decryptEnvelope,
@@ -45,37 +35,22 @@ import {invalidateSettings} from "@/lib/settings";
 // Shared bits
 // ---------------------------------------------------------------------------
 
-type Feedback =
-    | { kind: "idle" }
-    | { kind: "busy"; message: string }
-    | { kind: "success"; message: string }
-    | { kind: "error"; message: string };
-
-function FeedbackLine({feedback}: { feedback: Feedback }) {
-    if (feedback.kind === "idle") return null;
-    if (feedback.kind === "success") {
-        return (
-            <p className="flex items-center gap-1.5 text-sm text-emerald-600 dark:text-emerald-400">
-                <CheckCircle2 className="size-4" aria-hidden/>
-                {feedback.message}
-            </p>
-        );
-    }
-    if (feedback.kind === "busy") {
-        return (
-            <p className="text-muted-foreground flex items-center gap-1.5 text-sm">
-                <span
-                    className="border-foreground border-t-transparent size-3.5 animate-spin rounded-full border-2"
-                    aria-hidden
-                />
-                {feedback.message}
-            </p>
-        );
-    }
+/**
+ * Inline progress indicator for long-running local operations (export,
+ * decrypt, wipe). Completion notifications go through app toasts instead.
+ */
+function BusyLine({message}: { message: string }) {
     return (
-        <p className="text-destructive flex items-start gap-1.5 text-sm">
-            <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden/>
-            {feedback.message}
+        <p
+            role="status"
+            aria-live="polite"
+            className="text-muted-foreground flex items-center gap-1.5 text-sm"
+        >
+            <span
+                className="border-foreground border-t-transparent size-3.5 animate-spin rounded-full border-2"
+                aria-hidden
+            />
+            {message}
         </p>
     );
 }
@@ -141,7 +116,7 @@ function ExportCard({refreshSignal}: { refreshSignal: number }) {
     const [mode, setMode] = React.useState<"plain" | "encrypted">("encrypted");
     const [password, setPassword] = React.useState("");
     const [confirmPassword, setConfirmPassword] = React.useState("");
-    const [feedback, setFeedback] = React.useState<Feedback>({kind: "idle"});
+    const [busy, setBusy] = React.useState<string | null>(null);
     const [stats, setStats] = React.useState<ExportStats | null>(null);
 
     React.useEffect(() => {
@@ -153,7 +128,7 @@ function ExportCard({refreshSignal}: { refreshSignal: number }) {
                 if (active) setStats(value);
             })
             .catch((error: unknown) => {
-                if (active) setFeedback({kind: "error", message: errorMessage(error)});
+                if (active) toast.error(errorMessage(error));
             });
         return () => {
             active = false;
@@ -169,7 +144,7 @@ function ExportCard({refreshSignal}: { refreshSignal: number }) {
         mode === "plain" || (password.length > 0 && passwordsMatch && strength.score >= 1);
 
     const handleExport = async () => {
-        setFeedback({kind: "busy", message: "Building backup…"});
+        setBusy("Building backup…");
         try {
             const payload = await buildExportPayload();
             if (mode === "encrypted") {
@@ -184,15 +159,15 @@ function ExportCard({refreshSignal}: { refreshSignal: number }) {
                     exportFilename(payload.exportedAt, false)
                 );
             }
-            setFeedback({
-                kind: "success",
-                message:
-                    mode === "encrypted"
-                        ? "Backup downloaded — encrypted with your passphrase (AES-256-GCM)."
-                        : "Backup downloaded as plain JSON — readable by anyone with the file.",
-            });
+            toast.success(
+                mode === "encrypted"
+                    ? "Backup downloaded — encrypted with your passphrase (AES-256-GCM)."
+                    : "Backup downloaded as plain JSON — readable by anyone with the file."
+            );
         } catch (error: unknown) {
-            setFeedback({kind: "error", message: errorMessage(error)});
+            toast.error(errorMessage(error));
+        } finally {
+            setBusy(null);
         }
     };
 
@@ -304,12 +279,12 @@ function ExportCard({refreshSignal}: { refreshSignal: number }) {
                 <div className="flex flex-col gap-2">
                     <Button
                         onClick={() => void handleExport()}
-                        disabled={!canExport || feedback.kind === "busy"}
+                        disabled={!canExport || busy !== null}
                     >
                         <Download className="size-4" aria-hidden/>
                         Download backup
                     </Button>
-                    <FeedbackLine feedback={feedback}/>
+                    {busy && <BusyLine message={busy}/>}
                 </div>
             </CardContent>
         </Card>
@@ -339,13 +314,13 @@ function ImportCard({onImported}: { onImported: () => void }) {
     });
     const [passphrase, setPassphrase] = React.useState("");
     const [mode, setMode] = React.useState<ImportMode>("merge");
-    const [feedback, setFeedback] = React.useState<Feedback>({kind: "idle"});
+    const [busy, setBusy] = React.useState<string | null>(null);
     const [confirmOpen, setConfirmOpen] = React.useState(false);
 
     const handleFilePicked = async (file: File | undefined) => {
         if (!file) return;
         setPassphrase("");
-        setFeedback({kind: "busy", message: "Reading file…"});
+        setBusy("Reading file…");
         try {
             const raw = await file.text();
             let parsed: unknown = null;
@@ -357,7 +332,6 @@ function ImportCard({onImported}: { onImported: () => void }) {
 
             if (isEncryptedEnvelope(parsed)) {
                 setState({step: "encrypted", name: file.name, envelope: parsed, payload: null});
-                setFeedback({kind: "idle"});
                 return;
             }
 
@@ -369,19 +343,20 @@ function ImportCard({onImported}: { onImported: () => void }) {
                 payload,
                 encrypted: false,
             });
-            setFeedback({kind: "idle"});
         } catch (error: unknown) {
             setState({step: "idle", name: null, envelope: null, payload: null});
-            setFeedback({kind: "error", message: `Cannot import: ${errorMessage(error)}`});
+            toast.error(`Cannot import: ${errorMessage(error)}`);
+        } finally {
+            setBusy(null);
         }
     };
 
     const handleDecrypt = async () => {
         if (state.step !== "encrypted") return;
-        setFeedback({kind: "busy", message: "Decrypting (PBKDF2, 600k iterations)…"});
+        setBusy("Decrypting (PBKDF2, 600k iterations)…");
         try {
             const raw = await decryptEnvelope(state.envelope, passphrase);
-            setFeedback({kind: "busy", message: "Validating payload…"});
+            setBusy("Validating payload…");
             const payload = await validateExportPayload(raw);
             setState({
                 step: "ready",
@@ -390,16 +365,17 @@ function ImportCard({onImported}: { onImported: () => void }) {
                 payload,
                 encrypted: true,
             });
-            setFeedback({kind: "idle"});
         } catch (error: unknown) {
-            setFeedback({kind: "error", message: errorMessage(error)});
+            toast.error(errorMessage(error));
+        } finally {
+            setBusy(null);
         }
     };
 
     const handleConfirmImport = async () => {
         if (state.step !== "ready") return;
         setConfirmOpen(false);
-        setFeedback({kind: "busy", message: "Writing data…"});
+        setBusy("Writing data…");
         try {
             await writeImportedPayload(state.payload, mode);
             // Settings rows may have been replaced — refresh the shared
@@ -408,15 +384,16 @@ function ImportCard({onImported}: { onImported: () => void }) {
             const {counts} = summarizePayload(state.payload);
             const total = counts.medications + counts.schedules + counts.doseLogs +
                 counts.measurementTypes + counts.measurementLogs + counts.settings;
-            setFeedback({
-                kind: "success",
-                message: mode === "replace"
+            toast.success(
+                mode === "replace"
                     ? `Imported (replace) — restored ${total} records from the backup.`
-                    : `Imported (merge) — ${total} records written; existing entries were kept unless the file overrode them.`,
-            });
+                    : `Imported (merge) — ${total} records written; existing entries were kept unless the file overrode them.`
+            );
             onImported();
         } catch (error: unknown) {
-            setFeedback({kind: "error", message: `Import failed: ${errorMessage(error)}`});
+            toast.error(`Import failed: ${errorMessage(error)}`);
+        } finally {
+            setBusy(null);
         }
     };
 
@@ -448,7 +425,7 @@ function ImportCard({onImported}: { onImported: () => void }) {
                 <Button
                     variant="outline"
                     onClick={() => fileInputRef.current?.click()}
-                    disabled={feedback.kind === "busy"}
+                    disabled={busy !== null}
                 >
                     <FileUp className="size-4" aria-hidden/>
                     {state.step === "idle" ? "Choose backup file…" : "Choose another file…"}
@@ -537,7 +514,7 @@ function ImportCard({onImported}: { onImported: () => void }) {
                     </>
                 )}
 
-                <FeedbackLine feedback={feedback}/>
+                {busy && <BusyLine message={busy}/>}
             </CardContent>
 
             {state.step === "ready" && (
@@ -551,7 +528,7 @@ function ImportCard({onImported}: { onImported: () => void }) {
                             : "Records from the file will be written into this browser. Existing records are kept unless the file contains entries with the same ID."
                     }
                     confirmLabel={mode === "replace" ? "Delete & restore" : "Import"}
-                    busy={feedback.kind === "busy"}
+                    busy={busy !== null}
                     onConfirm={() => void handleConfirmImport()}
                     onCancel={() => setConfirmOpen(false)}
                 />
@@ -568,17 +545,18 @@ const WIPE_PHRASE = "WIPE";
 
 function DangerZoneCard() {
     const [confirmOpen, setConfirmOpen] = React.useState(false);
-    const [feedback, setFeedback] = React.useState<Feedback>({kind: "idle"});
+    const [busy, setBusy] = React.useState<string | null>(null);
 
     const handleWipe = async () => {
         setConfirmOpen(false);
-        setFeedback({kind: "busy", message: "Erasing local data…"});
+        setBusy("Erasing local data…");
         try {
             await wipeAllLocalData();
-            setFeedback({kind: "busy", message: "Local data erased. Reloading…"});
+            setBusy("Local data erased. Reloading…");
             window.setTimeout(() => window.location.reload(), 800);
         } catch (error: unknown) {
-            setFeedback({kind: "error", message: `Wipe failed: ${errorMessage(error)}`});
+            setBusy(null);
+            toast.error(`Wipe failed: ${errorMessage(error)}`);
         }
     };
 
@@ -604,13 +582,13 @@ function DangerZoneCard() {
                 <p className="text-muted-foreground text-xs">
                     Export a backup first if you might want this data later.
                 </p>
-                <FeedbackLine feedback={feedback}/>
+                {busy && <BusyLine message={busy}/>}
             </CardContent>
 
             <ConfirmDialog
                 open={confirmOpen}
                 destructive
-                busy={feedback.kind === "busy"}
+                busy={busy !== null}
                 title="Wipe everything from this browser?"
                 description="All Peptimania data in IndexedDB, localStorage, sessionStorage and the offline cache will be deleted. This cannot be undone."
                 confirmLabel="Erase everything"

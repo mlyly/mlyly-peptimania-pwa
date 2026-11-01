@@ -5,6 +5,7 @@ import "./globals.css";
 import {LAST_COMMIT_HASH, LAST_MODIFIED, LAST_MODIFIED_TIME} from "@/lib/app-info";
 import {OfflineFooterMarker} from "./offline-footer-marker";
 import {OfflineBanner} from "@/components/app/offline-banner";
+import {Toaster} from "@/components/ui/toaster";
 import {TermsGate} from "@/components/legal/terms-gate";
 import {ServiceWorkerRegister} from "@/components/pwa/service-worker-register";
 
@@ -80,6 +81,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <OfflineBanner/>
     {children}
     <TermsGate/>
+    <Toaster/>
     <footer className="mt-auto border-t">
         <div
             className="mx-auto flex w-full max-w-3xl items-center justify-between gap-4 px-4 text-xs"

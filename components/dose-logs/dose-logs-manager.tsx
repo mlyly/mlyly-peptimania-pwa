@@ -7,11 +7,11 @@ import {AlertCircle, ClipboardList, Plus, Search, SearchX,} from "lucide-react";
 import type {DoseLog} from "@/lib/db/types";
 import {storageAwareMessage} from "@/lib/db/quota";
 import {deleteDoseLog} from "@/lib/scheduling/service";
+import {toast} from "@/lib/toast";
 
 import {ConfirmDialog} from "@/components/app/confirm-dialog";
 import {ListPager} from "@/components/app/list-pager";
 import {usePagedTable} from "@/components/app/use-paged-table";
-import {type Feedback, FeedbackLine} from "@/components/ui/feedback-line";
 import {Badge} from "@/components/ui/badge";
 import {Button} from "@/components/ui/button";
 import {Card, CardContent} from "@/components/ui/card";
@@ -52,7 +52,6 @@ export function DoseLogsManager() {
     const [medicationFilter, setMedicationFilter] = React.useState("all");
     const [originFilter, setOriginFilter] = React.useState<OriginFilter>("all");
 
-    const [feedback, setFeedback] = React.useState<Feedback>(null);
     const [busyId, setBusyId] = React.useState<string | null>(null);
 
     const [formOpen, setFormOpen] = React.useState(false);
@@ -60,15 +59,8 @@ export function DoseLogsManager() {
     const [deleteTarget, setDeleteTarget] = React.useState<DeleteTarget | null>(null);
 
     const reportError = React.useCallback((error: unknown, prefix: string) => {
-        setFeedback({kind: "error", message: storageAwareMessage(error, prefix)});
+        toast.error(storageAwareMessage(error, prefix));
     }, []);
-
-    // Auto-dismiss success feedback.
-    React.useEffect(() => {
-        if (feedback?.kind !== "success") return;
-        const timer = window.setTimeout(() => setFeedback(null), 4000);
-        return () => window.clearTimeout(timer);
-    }, [feedback]);
 
     // -- Handlers ----------------------------------------------------------
 
@@ -94,13 +86,11 @@ export function DoseLogsManager() {
     const handleDoseSaved = React.useCallback(
         (saved: DoseLog, mode: "created" | "updated") => {
             const name = medications.get(saved.medicationId)?.name;
-            setFeedback({
-                kind: "success",
-                message:
-                    mode === "created"
-                        ? `${name ? `${name} ` : ""}dose logged.`
-                        : "Dose updated.",
-            });
+            toast.success(
+                mode === "created"
+                    ? `${name ? `${name} ` : ""}dose logged.`
+                    : "Dose updated."
+            );
             onChanged();
         },
         [medications, onChanged]
@@ -121,7 +111,7 @@ export function DoseLogsManager() {
         setBusyId(deleteTarget.log.id);
         try {
             await deleteDoseLog(deleteTarget.log.id);
-            setFeedback({kind: "success", message: "Dose log deleted."});
+            toast.success("Dose log deleted.");
             setDeleteTarget(null);
             onChanged();
         } catch (error: unknown) {
@@ -188,9 +178,6 @@ export function DoseLogsManager() {
 
     return (
         <div className="flex flex-col gap-3">
-            {/* Feedback line */}
-            <FeedbackLine feedback={feedback} onDismiss={() => setFeedback(null)}/>
-
             {/* Toolbar */}
             <div className="flex flex-wrap items-center gap-2">
                 <div className="relative min-w-36 flex-1">

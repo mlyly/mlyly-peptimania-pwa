@@ -2,10 +2,10 @@
 
 import * as React from "react";
 
-import {type Feedback, FeedbackLine} from "@/components/ui/feedback-line";
 import {Card, CardContent, CardHeader} from "@/components/ui/card";
 import {Skeleton} from "@/components/ui/skeleton";
 import {storageAwareMessage} from "@/lib/db/quota";
+import {toast} from "@/lib/toast";
 
 import {TodayChecklist} from "./today-checklist";
 import {useTrackerData} from "./use-tracker-data";
@@ -16,27 +16,19 @@ import {useTrackerData} from "./use-tracker-data";
  * Used from the home page; the /schedules manager provides its data instead.
  *
  * Boot failures stay compact (the StorageStatus card on Settings carries the
- * authoritative database message); mutation failures get their own
- * dismissible feedback line so a lost check-off is never silent.
+ * authoritative database message); mutation failures surface as error
+ * toasts so a lost check-off is never silent.
  */
 export function DashboardChecklist({manageHref}: { manageHref?: string }) {
     const {phase, data, reloading, reload} = useTrackerData();
-    const [feedback, setFeedback] = React.useState<Feedback>(null);
 
     const onChanged = React.useCallback(() => {
         void reload();
     }, [reload]);
 
     const onError = React.useCallback((error: unknown, prefix: string) => {
-        setFeedback({kind: "error", message: storageAwareMessage(error, prefix)});
+        toast.error(storageAwareMessage(error, prefix));
     }, []);
-
-    // Auto-dismiss success feedback.
-    React.useEffect(() => {
-        if (feedback?.kind !== "success") return;
-        const timer = window.setTimeout(() => setFeedback(null), 4000);
-        return () => window.clearTimeout(timer);
-    }, [feedback]);
 
     if (phase.phase === "loading") {
         return (
@@ -63,15 +55,12 @@ export function DashboardChecklist({manageHref}: { manageHref?: string }) {
     }
 
     return (
-        <>
-            <FeedbackLine feedback={feedback} onDismiss={() => setFeedback(null)}/>
-            <TodayChecklist
-                data={data}
-                onChanged={onChanged}
-                onError={onError}
-                busy={reloading}
-                manageHref={manageHref}
-            />
-        </>
+        <TodayChecklist
+            data={data}
+            onChanged={onChanged}
+            onError={onError}
+            busy={reloading}
+            manageHref={manageHref}
+        />
     );
 }

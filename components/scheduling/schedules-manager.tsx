@@ -10,10 +10,10 @@ import {storageAwareMessage} from "@/lib/db/quota";
 import {dateOnlyIso, localDateFromIso} from "@/lib/scheduling/dates";
 import {deleteSchedule, setScheduleActive} from "@/lib/scheduling/service";
 import {formatNumber} from "@/lib/units";
+import {toast} from "@/lib/toast";
 import {cn} from "@/lib/utils";
 
 import {ConfirmDialog} from "@/components/app/confirm-dialog";
-import {type Feedback, FeedbackLine} from "@/components/ui/feedback-line";
 import {Badge} from "@/components/ui/badge";
 import {Button} from "@/components/ui/button";
 import {Card, CardContent} from "@/components/ui/card";
@@ -49,13 +49,12 @@ function parseDateParam(value: string | null): Date | null {
 /**
  * Full scheduling surface (AGENTS.md §5): the "Today's Doses" checklist,
  * the month calendar + agenda, and the schedule list with CRUD. Boots the
- * local database and owns data reloads + feedback for all three.
+ * local database and owns data reloads + toast notifications for all three.
  */
 export function SchedulesManager() {
     const {phase, data, reload} = useTrackerData();
 
     const [tab, setTab] = React.useState<TabId>("today");
-    const [feedback, setFeedback] = React.useState<Feedback>(null);
     const [busyId, setBusyId] = React.useState<string | null>(null);
 
     const [formOpen, setFormOpen] = React.useState(false);
@@ -83,15 +82,8 @@ export function SchedulesManager() {
     );
 
     const reportError = React.useCallback((error: unknown, prefix: string) => {
-        setFeedback({kind: "error", message: storageAwareMessage(error, prefix)});
+        toast.error(storageAwareMessage(error, prefix));
     }, []);
-
-    // Auto-dismiss success feedback.
-    React.useEffect(() => {
-        if (feedback?.kind !== "success") return;
-        const timer = window.setTimeout(() => setFeedback(null), 4000);
-        return () => window.clearTimeout(timer);
-    }, [feedback]);
 
     // -- Handlers ----------------------------------------------------------
 
@@ -111,13 +103,11 @@ export function SchedulesManager() {
 
     const handleScheduleSaved = React.useCallback(
         (schedule: Schedule, mode: "created" | "updated") => {
-            setFeedback({
-                kind: "success",
-                message:
-                    mode === "created"
-                        ? "Schedule created — it will appear in Today and the calendar."
-                        : "Schedule updated.",
-            });
+            toast.success(
+                mode === "created"
+                    ? "Schedule created — it will appear in Today and the calendar."
+                    : "Schedule updated."
+            );
             onChanged();
         },
         [onChanged]
@@ -139,7 +129,7 @@ export function SchedulesManager() {
         setBusyId(deleteTarget.schedule.id);
         try {
             await deleteSchedule(deleteTarget.schedule.id);
-            setFeedback({kind: "success", message: "Schedule deleted. Dose history was kept."});
+            toast.success("Schedule deleted. Dose history was kept.");
             setDeleteTarget(null);
             onChanged();
         } catch (error: unknown) {
@@ -155,10 +145,7 @@ export function SchedulesManager() {
             setBusyId(schedule.id);
             try {
                 await setScheduleActive(schedule.id, active);
-                setFeedback({
-                    kind: "success",
-                    message: active ? "Schedule resumed." : "Schedule paused.",
-                });
+                toast.success(active ? "Schedule resumed." : "Schedule paused.");
                 onChanged();
             } catch (error: unknown) {
                 reportError(error, "Could not change the schedule");
@@ -204,9 +191,6 @@ export function SchedulesManager() {
 
     return (
         <div className="flex flex-col gap-3">
-            {/* Feedback line */}
-            <FeedbackLine feedback={feedback} onDismiss={() => setFeedback(null)}/>
-
             {/* Tab bar */}
             <div
                 role="tablist"

@@ -1,6 +1,7 @@
 import type {Metadata} from "next";
 
 import {BackButton} from "@/components/app/back-button";
+import {HomeNav} from "@/components/app/home-nav";
 import {DoseLogsManager} from "@/components/dose-logs/dose-logs-manager";
 
 export const metadata: Metadata = {
@@ -15,7 +16,8 @@ export default function DoseLogsPage() {
             <header className="flex w-full max-w-3xl flex-col gap-3">
                 <div className="flex items-center gap-1">
                     <BackButton/>
-                    <h1 className="text-2xl font-semibold tracking-tight">Dose Log</h1>
+                    <h1 className="shrink-0 text-2xl font-semibold tracking-tight">Dose Log</h1>
+                    <HomeNav/>
                 </div>
                 <p className="text-muted-foreground max-w-2xl">
                     Your complete dose history — scheduled check-offs and one-off doses,

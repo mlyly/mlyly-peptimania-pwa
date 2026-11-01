@@ -40,7 +40,7 @@ export interface TodayChecklistProps {
     data: TrackerData;
     /** Called after any successful mutation (caller reloads its tables). */
     onChanged: () => void;
-    /** Called when a mutation fails (the manager shows the feedback line). */
+    /** Called when a mutation fails (the manager shows an error toast). */
     onError?: (error: unknown, prefix: string) => void;
     /** Disables mutations while a write is in flight. */
     busy?: boolean;

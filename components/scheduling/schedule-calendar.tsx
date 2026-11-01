@@ -34,7 +34,7 @@ export interface ScheduleCalendarProps {
     onSelectDate: (date: Date) => void;
     /** Called after a log/un-log mutation. */
     onChanged: () => void;
-    /** Called when a mutation fails (the manager shows the feedback line). */
+    /** Called when a mutation fails (the manager shows an error toast). */
     onError?: (error: unknown, prefix: string) => void;
     busy?: boolean;
 }

@@ -4,7 +4,6 @@ import * as React from "react";
 import {AlertCircle, ArrowDownUp, Boxes, Plus, Search, SearchX,} from "lucide-react";
 
 import {ConfirmDialog} from "@/components/app/confirm-dialog";
-import {type Feedback, FeedbackLine} from "@/components/ui/feedback-line";
 import {Badge} from "@/components/ui/badge";
 import {Button} from "@/components/ui/button";
 import {Card, CardContent} from "@/components/ui/card";
@@ -15,6 +14,7 @@ import {ensureDatabase, type InventoryLot, type Medication, type MedicationType,
 import {storageAwareMessage} from "@/lib/db/quota";
 import {MEDICATION_TYPE_META, MEDICATION_TYPES, medicationTypeMeta,} from "@/lib/medications/constants";
 import {inventoryQuantity, inventoryStatus} from "@/lib/medications/derived";
+import {toast} from "@/lib/toast";
 import {
     type InventoryLotFormValues,
     inventoryLotFormValuesToLot,
@@ -80,18 +80,10 @@ export function MedicationsManager() {
     const [deleteTarget, setDeleteTarget] = React.useState<DeleteTarget | null>(null);
     const [deleting, setDeleting] = React.useState(false);
     const [busyId, setBusyId] = React.useState<string | null>(null);
-    const [feedback, setFeedback] = React.useState<Feedback>(null);
 
     const reportError = React.useCallback((error: unknown, prefix: string) => {
-        setFeedback({kind: "error", message: storageAwareMessage(error, prefix)});
+        toast.error(storageAwareMessage(error, prefix));
     }, []);
-
-    // Auto-dismiss success feedback.
-    React.useEffect(() => {
-        if (feedback?.kind !== "success") return;
-        const timer = window.setTimeout(() => setFeedback(null), 4000);
-        return () => window.clearTimeout(timer);
-    }, [feedback]);
 
     const load = React.useCallback(async () => {
         setDataLoading(true);
@@ -201,13 +193,11 @@ export function MedicationsManager() {
                 next[index] = medication;
                 return next;
             });
-            setFeedback({
-                kind: "success",
-                message:
-                    mode === "created"
-                        ? `${medication.name} added.`
-                        : `${medication.name} updated.`,
-            });
+            toast.success(
+                mode === "created"
+                    ? `${medication.name} added.`
+                    : `${medication.name} updated.`
+            );
         },
         []
     );
@@ -236,18 +226,17 @@ export function MedicationsManager() {
             setSchedules((previous) =>
                 previous.filter((s) => s.medicationId !== medication.id)
             );
-            setFeedback({
-                kind: "success",
-                message:
-                    `${medication.name} deleted` +
-                    (counts.schedules + counts.doseLogs > 0
-                        ? ` (incl. ${counts.schedules} ${
-                            counts.schedules === 1 ? "schedule" : "schedules"
-                        }, ${counts.doseLogs} ${
-                            counts.doseLogs === 1 ? "dose log" : "dose logs"
-                        })`
-                        : ""),
-            });
+            toast.success(
+                `${medication.name} deleted` +
+                (counts.schedules + counts.doseLogs > 0
+                    ? ` (incl. ${counts.schedules} ${
+                        counts.schedules === 1 ? "schedule" : "schedules"
+                    }, ${counts.doseLogs} ${
+                        counts.doseLogs === 1 ? "dose log" : "dose logs"
+                    })`
+                    : "") +
+                "."
+            );
             setDeleteTarget(null);
         } catch (error: unknown) {
             reportError(error, "Delete failed");
@@ -287,7 +276,7 @@ export function MedicationsManager() {
                 setMedications((previous) =>
                     previous.map((m) => (m.id === updated.id ? updated : m))
                 );
-                setFeedback({kind: "success", message: "Inventory lot saved."});
+                toast.success("Inventory lot saved.");
                 setLotEditor(null);
             } catch (error: unknown) {
                 reportError(error, "Could not save inventory lot");
@@ -308,7 +297,7 @@ export function MedicationsManager() {
             setMedications((previous) =>
                 previous.map((m) => (m.id === updated.id ? updated : m))
             );
-            setFeedback({kind: "success", message: "Inventory lot removed."});
+            toast.success("Inventory lot removed.");
             setLotEditor(null);
         } catch (error: unknown) {
             reportError(error, "Could not remove inventory lot");
@@ -366,9 +355,6 @@ export function MedicationsManager() {
 
     return (
         <div className="flex flex-col gap-3">
-            {/* Feedback line */}
-            <FeedbackLine feedback={feedback} onDismiss={() => setFeedback(null)}/>
-
             {/* Toolbar */}
             <div className="flex flex-wrap items-center gap-2">
                 <div className="relative min-w-36 flex-1">

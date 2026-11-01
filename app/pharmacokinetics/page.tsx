@@ -1,6 +1,7 @@
 import type {Metadata} from "next";
 
 import {BackButton} from "@/components/app/back-button";
+import {HomeNav} from "@/components/app/home-nav";
 import {PkChartDashboard} from "@/components/pharmacokinetics/pk-chart-dashboard";
 
 export const metadata: Metadata = {
@@ -15,9 +16,10 @@ export default function PharmacokineticsPage() {
             <header className="flex w-full max-w-5xl flex-col gap-3">
                 <div className="flex items-center gap-1">
                     <BackButton/>
-                    <h1 className="text-2xl font-semibold tracking-tight">
+                    <h1 className="shrink-0 text-2xl font-semibold tracking-tight">
                         Concentration Chart
                     </h1>
+                    <HomeNav/>
                 </div>
                 <p className="text-muted-foreground max-w-2xl">
                     Estimated first-order elimination curves built from your logged and

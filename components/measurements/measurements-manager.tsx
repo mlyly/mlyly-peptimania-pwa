@@ -19,12 +19,12 @@ import {
 import {deleteMeasurementLog, deleteMeasurementType} from "@/lib/measurements/service";
 import {BUILTIN_MEASUREMENT_TYPES, isBuiltinMeasurementType, measurementTypeIcon,} from "@/lib/measurements/constants";
 import {formatNumber} from "@/lib/units";
+import {toast} from "@/lib/toast";
 import {cn} from "@/lib/utils";
 
 import {ConfirmDialog} from "@/components/app/confirm-dialog";
 import {ListPager} from "@/components/app/list-pager";
 import {usePagedTable} from "@/components/app/use-paged-table";
-import {type Feedback, FeedbackLine} from "@/components/ui/feedback-line";
 import {Badge} from "@/components/ui/badge";
 import {Button} from "@/components/ui/button";
 import {Card, CardContent} from "@/components/ui/card";
@@ -154,7 +154,6 @@ export function MeasurementsManager() {
         logCountByType,
     } = useMeasurementsData();
 
-    const [feedback, setFeedback] = React.useState<Feedback>(null);
     const [busyId, setBusyId] = React.useState<string | null>(null);
 
     const [logFormOpen, setLogFormOpen] = React.useState(false);
@@ -171,15 +170,8 @@ export function MeasurementsManager() {
     );
 
     const reportError = React.useCallback((error: unknown, prefix: string) => {
-        setFeedback({kind: "error", message: storageAwareMessage(error, prefix)});
+        toast.error(storageAwareMessage(error, prefix));
     }, []);
-
-    // Auto-dismiss success feedback.
-    React.useEffect(() => {
-        if (feedback?.kind !== "success") return;
-        const timer = window.setTimeout(() => setFeedback(null), 4000);
-        return () => window.clearTimeout(timer);
-    }, [feedback]);
 
     // -- Handlers ----------------------------------------------------------
 
@@ -210,13 +202,11 @@ export function MeasurementsManager() {
     const handleLogSaved = React.useCallback(
         (saved: MeasurementLog, mode: "created" | "updated") => {
             const name = typeIndex.get(saved.measurementTypeId)?.name;
-            setFeedback({
-                kind: "success",
-                message:
-                    mode === "created"
-                        ? `${name ? `${name} ` : ""}reading logged.`
-                        : "Reading updated.",
-            });
+            toast.success(
+                mode === "created"
+                    ? `${name ? `${name} ` : ""}reading logged.`
+                    : "Reading updated."
+            );
             onChanged();
         },
         [typeIndex, onChanged]
@@ -224,13 +214,11 @@ export function MeasurementsManager() {
 
     const handleTypeSaved = React.useCallback(
         (saved: MeasurementType, mode: "created" | "updated") => {
-            setFeedback({
-                kind: "success",
-                message:
-                    mode === "created"
-                        ? `Tracker “${saved.name}” created.`
-                        : `Tracker “${saved.name}” updated.`,
-            });
+            toast.success(
+                mode === "created"
+                    ? `Tracker “${saved.name}” created.`
+                    : `Tracker “${saved.name}” updated.`
+            );
             if (mode === "created") selectType(saved.id);
             onChanged();
         },
@@ -252,7 +240,7 @@ export function MeasurementsManager() {
         setBusyId(deleteLogTarget.log.id);
         try {
             await deleteMeasurementLog(deleteLogTarget.log.id);
-            setFeedback({kind: "success", message: "Reading deleted."});
+            toast.success("Reading deleted.");
             setDeleteLogTarget(null);
             onChanged();
         } catch (error: unknown) {
@@ -278,10 +266,7 @@ export function MeasurementsManager() {
         setBusyId(deleteTypeTarget.type.id);
         try {
             await deleteMeasurementType(deleteTypeTarget.type.id);
-            setFeedback({
-                kind: "success",
-                message: `Tracker “${deleteTypeTarget.type.name}” deleted.`,
-            });
+            toast.success(`Tracker “${deleteTypeTarget.type.name}” deleted.`);
             setDeleteTypeTarget(null);
             onChanged();
         } catch (error: unknown) {
@@ -394,9 +379,6 @@ export function MeasurementsManager() {
 
     return (
         <div className="flex flex-col gap-3">
-            {/* Feedback line */}
-            <FeedbackLine feedback={feedback} onDismiss={() => setFeedback(null)}/>
-
             {/* Tracker selector */}
             <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                 {data.types.map((type) => (
