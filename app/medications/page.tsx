@@ -1,13 +1,12 @@
 import type {Metadata} from "next";
 
 import {BackButton} from "@/components/app/back-button";
-import {StatusBadges} from "@/components/app/storage-status";
 import {MedicationsManager} from "@/components/medications/medications-manager";
 
 export const metadata: Metadata = {
     title: "Medications",
     description:
-        "Manage medications, peptides and supplements — inventory, low-stock alerts, reconstitutions and schedule-linked dose volumes. 100% local.",
+        "Manage medications, peptides and supplements — inventory, low-stock alerts, reconstitutions and schedule-linked dose volumes.",
 };
 
 export default function MedicationsPage() {
@@ -23,7 +22,6 @@ export default function MedicationsPage() {
                     much to draw for each scheduled dose. Everything stays in this
                     browser.
                 </p>
-                <StatusBadges/>
             </header>
 
             <main className="flex w-full max-w-3xl flex-col gap-4">

@@ -2,14 +2,13 @@ import type {Metadata} from "next";
 import {Suspense} from "react";
 
 import {BackButton} from "@/components/app/back-button";
-import {StatusBadges} from "@/components/app/storage-status";
 import {SchedulesManager} from "@/components/scheduling/schedules-manager";
 import {Skeleton} from "@/components/ui/skeleton";
 
 export const metadata: Metadata = {
     title: "Schedules",
     description:
-        "Dose schedules with daily, weekly and custom-interval frequencies — check off today's doses, browse the calendar agenda, and manage recurring doses. 100% local.",
+        "Dose schedules with daily, weekly and custom-interval frequencies — check off today's doses, browse the calendar agenda, and manage recurring doses.",
 };
 
 export default function SchedulesPage() {
@@ -25,7 +24,6 @@ export default function SchedulesPage() {
                     weekdays, or every N days. Check off today’s doses in one tap, or browse
                     the calendar. Everything stays in this browser.
                 </p>
-                <StatusBadges/>
             </header>
 
             <main className="flex w-full max-w-3xl flex-col gap-4">

@@ -1,13 +1,12 @@
 import type {Metadata} from "next";
 
 import {BackButton} from "@/components/app/back-button";
-import {StatusBadges} from "@/components/app/storage-status";
 import {PkChartDashboard} from "@/components/pharmacokinetics/pk-chart-dashboard";
 
 export const metadata: Metadata = {
     title: "Concentration Chart",
     description:
-        "Interactive pharmacokinetic concentration curves with multi-medication overlays, calendar windows and mcg/mg/IU display units. 100% local.",
+        "Interactive pharmacokinetic concentration curves with multi-medication overlays, calendar windows and mcg/mg/IU display units.",
 };
 
 export default function PharmacokineticsPage() {
@@ -25,7 +24,6 @@ export default function PharmacokineticsPage() {
                     scheduled doses. Toggle medications, switch the window and convert the
                     axes and tooltips between mcg, mg and IU — all in this browser.
                 </p>
-                <StatusBadges/>
             </header>
 
             <main className="flex w-full max-w-5xl flex-col gap-4">

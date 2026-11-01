@@ -1,7 +1,7 @@
 import type {Metadata} from "next";
 
 import {BackButton} from "@/components/app/back-button";
-import {StatusBadges, StorageStatus} from "@/components/app/storage-status";
+import {StorageStatus} from "@/components/app/storage-status";
 import {ChartSettings} from "@/components/settings/chart-settings";
 import {DataManagement} from "@/components/settings/data-management";
 
@@ -23,7 +23,6 @@ export default function SettingsPage() {
                     Your data lives only in this browser (IndexedDB) — export, import
                     or erase it — and nothing ever leaves your device.
                 </p>
-                <StatusBadges/>
             </header>
 
             <main className="flex w-full max-w-2xl flex-col gap-4">

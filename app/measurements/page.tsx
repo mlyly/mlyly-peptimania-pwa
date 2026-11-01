@@ -1,7 +1,6 @@
 import type {Metadata} from "next";
 
 import {BackButton} from "@/components/app/back-button";
-import {StatusBadges} from "@/components/app/storage-status";
 import {MeasurementsManager} from "@/components/measurements/measurements-manager";
 
 export const metadata: Metadata = {
@@ -25,7 +24,6 @@ export default function MeasurementsPage() {
                     you can extend or prune on the fly. Everything stays in this
                     browser.
                 </p>
-                <StatusBadges/>
             </header>
 
             <main className="flex w-full max-w-3xl flex-col gap-4">

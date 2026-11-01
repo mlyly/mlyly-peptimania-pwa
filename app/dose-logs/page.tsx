@@ -1,13 +1,12 @@
 import type {Metadata} from "next";
 
 import {BackButton} from "@/components/app/back-button";
-import {StatusBadges} from "@/components/app/storage-status";
 import {DoseLogsManager} from "@/components/dose-logs/dose-logs-manager";
 
 export const metadata: Metadata = {
     title: "Dose Log",
     description:
-        "Every dose you've recorded — scheduled check-offs and one-offs — with times, amounts, sites and notes, in a day-grouped history. 100% local.",
+        "Every dose you've recorded — scheduled check-offs and one-offs — with times, amounts, sites and notes, in a day-grouped history.",
 };
 
 export default function DoseLogsPage() {
@@ -23,7 +22,6 @@ export default function DoseLogsPage() {
                     with exact times, amounts, sites and notes. Search, filter, edit or
                     delete any entry. Everything stays in this browser.
                 </p>
-                <StatusBadges/>
             </header>
 
             <main className="flex w-full max-w-3xl flex-col gap-4">

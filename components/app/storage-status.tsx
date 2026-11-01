@@ -1,9 +1,8 @@
 "use client";
 
 import {useEffect, useState} from "react";
-import {Activity, CloudOff, Database, HardDrive, ShieldCheck} from "lucide-react";
+import {Database, HardDrive, ShieldCheck} from "lucide-react";
 
-import {Badge} from "@/components/ui/badge";
 import {Button} from "@/components/ui/button";
 import {Card, CardContent, CardDescription, CardHeader, CardTitle,} from "@/components/ui/card";
 import {Progress} from "@/components/ui/progress";
@@ -152,20 +151,5 @@ export function StorageStatus() {
                 )}
             </CardContent>
         </Card>
-    );
-}
-
-export function StatusBadges() {
-    return (
-        <div className="flex items-center gap-2">
-            <Badge variant="outline">
-                <Activity className="size-3" aria-hidden/>
-                Offline-first
-            </Badge>
-            <Badge variant="outline">
-                <CloudOff className="size-3" aria-hidden/>
-                100% local
-            </Badge>
-        </div>
     );
 }
