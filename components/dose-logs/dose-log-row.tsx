@@ -64,14 +64,20 @@ export function DoseLogRow({
                     </span>
                 </p>
                 {log.injectionSite && (
-                    <Badge variant="outline" className="shrink-0 px-1.5 py-0 text-[11px]">
-                        <MapPin className="mr-1 size-3" aria-hidden/>
-                        {log.injectionSite}
+                    <Badge
+                        variant="outline"
+                        className="max-w-20 px-1.5 py-0 text-[11px]"
+                    >
+                        <MapPin className="mr-1 size-3 shrink-0" aria-hidden/>
+                        <span className="min-w-0 truncate">{log.injectionSite}</span>
                     </Badge>
                 )}
                 {fromSchedule && (
-                    <Badge variant="secondary" className="shrink-0 px-1.5 py-0 text-[11px]">
-                        From schedule
+                    <Badge
+                        variant="secondary"
+                        className="shrink-0 px-1.5 py-0 text-[11px] max-[400px]:hidden"
+                    >
+                        Scheduled
                     </Badge>
                 )}
                 {log.notes && (

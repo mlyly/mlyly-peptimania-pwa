@@ -80,7 +80,14 @@ function TermsDialog({setSetting}: {
             aria-labelledby="terms-gate-title"
             className="fixed inset-0 z-50 overflow-y-auto bg-background"
         >
-            <div className="mx-auto flex min-h-full w-full max-w-2xl flex-col px-4 py-8">
+            <div
+                className="mx-auto flex min-h-full w-full max-w-2xl flex-col px-4 pb-8"
+                style={{
+                    // Fixed overlays sit outside the body flow — clear the
+                    // notch/edge-to-edge status bar themselves.
+                    paddingTop: "calc(2rem + env(safe-area-inset-top))",
+                }}
+            >
                 <header className="flex items-start gap-3">
                     <TriangleAlert className="mt-1 size-6 shrink-0 text-amber-500" aria-hidden/>
                     <div>

@@ -126,6 +126,35 @@
 }
 
 /* ---------------------------------------------------------------------------
+ * App-like display on mobile — the document never pans sideways and the
+ * layout behaves like a native app, not a wide page squeezed into a phone.
+ * --------------------------------------------------------------------------- */
+
+html,
+body {
+    /* One oversized element must not turn the whole page into a
+     * horizontally scrollable viewport. `clip` (not `hidden`) keeps
+     * `position: sticky/fixed` descendants working. */
+    overflow-x: clip;
+    /* Swiping left/right at the edges produces no rubber-band pan. */
+    overscroll-behavior-x: none;
+}
+
+html {
+    /* Disable Android "desktop-mode" font inflation so rendered sizes match
+     * the CSS px the layout was designed with. */
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+}
+
+body {
+    /* The viewport runs edge-to-edge (viewport-fit=cover, translucent status
+     * bar in standalone mode) — keep content clear of the notch. Desktop and
+     * in-browser mobile report 0 here, so this is a no-op there. */
+    padding-top: env(safe-area-inset-top);
+}
+
+/* ---------------------------------------------------------------------------
  * Touch targets (PWA) — grow interactive controls to comfortable tap sizes
  * on coarse-pointer devices only, so the dense desktop layout is untouched.
  * --------------------------------------------------------------------------- */
