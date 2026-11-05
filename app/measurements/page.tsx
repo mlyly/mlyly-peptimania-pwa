@@ -12,7 +12,7 @@ export const metadata: Metadata = {
 
 export default function MeasurementsPage() {
     return (
-        <div className="flex flex-1 flex-col items-center gap-8 px-4 py-12">
+        <div className="flex flex-1 flex-col items-center gap-8 px-4 pb-12">
             <header className="flex w-full max-w-3xl flex-col gap-3">
                 <div className="flex items-center gap-1">
                     <HomeLink/>
