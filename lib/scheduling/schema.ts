@@ -68,7 +68,7 @@ export const scheduleInputSchema = z
             .positive("Dose must be greater than zero")
             .max(1e9, "Dose looks too large"),
         unit: z.enum(DOSE_UNITS),
-        frequencyType: z.enum(["daily", "weekly", "custom_interval"]),
+        frequencyType: z.enum(["daily", "weekly", "custom_interval", "cycle"]),
         /**
          * Days of week (0 = Sun … 6 = Sat) — only meaningful for "weekly".
          * Type-level optional; required for "weekly" via superRefine.
@@ -80,6 +80,20 @@ export const scheduleInputSchema = z
             .int("Interval must be a whole number of days")
             .min(1, "Interval must be at least 1 day")
             .max(365, "Interval looks too large")
+            .optional(),
+        /** Consecutive dosing days — only meaningful for "cycle". */
+        daysOn: z
+            .number()
+            .int("Days on must be a whole number")
+            .min(1, "Days on must be at least 1")
+            .max(365, "Days on looks too large")
+            .optional(),
+        /** Consecutive skipped days — only meaningful for "cycle". */
+        daysOff: z
+            .number()
+            .int("Days off must be a whole number")
+            .min(1, "Days off must be at least 1")
+            .max(365, "Days off looks too large")
             .optional(),
         timeOfDay: timeOfDaySchema,
         startDate: isoDateSchema,
@@ -103,6 +117,22 @@ export const scheduleInputSchema = z
                 message: "Required for a custom interval",
             });
         }
+        if (value.frequencyType === "cycle") {
+            if (value.daysOn === undefined || value.daysOn < 1) {
+                ctx.addIssue({
+                    code: "custom",
+                    path: ["daysOn"],
+                    message: "Required for days on/off",
+                });
+            }
+            if (value.daysOff === undefined || value.daysOff < 1) {
+                ctx.addIssue({
+                    code: "custom",
+                    path: ["daysOff"],
+                    message: "Required for days on/off",
+                });
+            }
+        }
     });
 
 export type ScheduleInput = z.infer<typeof scheduleInputSchema>;
@@ -115,12 +145,14 @@ export type CanonicalScheduleInput = Omit<ScheduleInput, "weekdays"> & {
     /** 0 = Sun … 6 = Sat (validated), deduped and sorted. */
     weekdays?: Weekday[];
     intervalDays?: number;
+    daysOn?: number;
+    daysOff?: number;
 };
 
 /**
  * Normalizes (and strips) frequency-specific fields before storage:
  * de-duped/sorted weekdays for "weekly", the interval only for
- * "custom_interval".
+ * "custom_interval", and the on/off runs only for "cycle".
  */
 export function canonicalScheduleInput(input: ScheduleInput): CanonicalScheduleInput {
     const weekdays =
@@ -129,6 +161,8 @@ export function canonicalScheduleInput(input: ScheduleInput): CanonicalScheduleI
             : undefined;
     const intervalDays =
         input.frequencyType === "custom_interval" ? input.intervalDays : undefined;
+    const daysOn = input.frequencyType === "cycle" ? input.daysOn : undefined;
+    const daysOff = input.frequencyType === "cycle" ? input.daysOff : undefined;
     return {
         medicationId: input.medicationId,
         doseAmount: input.doseAmount,
@@ -136,6 +170,8 @@ export function canonicalScheduleInput(input: ScheduleInput): CanonicalScheduleI
         frequencyType: input.frequencyType,
         weekdays,
         intervalDays,
+        daysOn,
+        daysOff,
         timeOfDay: input.timeOfDay,
         startDate: input.startDate,
         active: input.active,
@@ -209,10 +245,13 @@ export const scheduleFormSchema = z
         medicationId: z.string().min(1, "Choose a medication"),
         doseAmount: z.string(),
         unit: z.enum(DOSE_UNITS),
-        frequencyType: z.enum(["daily", "weekly", "custom_interval"]),
+        frequencyType: z.enum(["daily", "weekly", "custom_interval", "cycle"]),
         /** One boolean per weekday (S..S) — chips in the dialog. */
         weekdays: z.array(z.boolean()).length(7, "Pick days of the week"),
         intervalDays: z.string(),
+        /** Raw numeric strings for the "cycle" (X days on / Y days off) mode. */
+        daysOn: z.string(),
+        daysOff: z.string(),
         timeSlot: z.enum(FORM_TIME_SLOTS),
         timeOfDay: z.string(),
         startDate: z.string(),
@@ -260,6 +299,34 @@ export const scheduleFormSchema = z
                     });
                 }
             }
+        }
+
+        if (values.frequencyType === "cycle") {
+            const validateCycleDays = (
+                raw: string,
+                path: "daysOn" | "daysOff",
+                label: string
+            ) => {
+                const trimmed = raw.trim();
+                if (trimmed === "") {
+                    ctx.addIssue({
+                        code: "custom",
+                        path: [path],
+                        message: `${label} is required`,
+                    });
+                    return;
+                }
+                const days = parseDecimalInput(trimmed);
+                if (days === undefined || !Number.isInteger(days) || days < 1 || days > 365) {
+                    ctx.addIssue({
+                        code: "custom",
+                        path: [path],
+                        message: `${label} must be 1–365 whole days`,
+                    });
+                }
+            };
+            validateCycleDays(values.daysOn, "daysOn", "Days on");
+            validateCycleDays(values.daysOff, "daysOff", "Days off");
         }
 
         if (values.timeSlot === "custom") {
@@ -327,6 +394,8 @@ export function scheduleToFormValues(
             // Default weekly selection: today's day of the week.
             weekdays: WEEKDAYS.map((_, index) => index === new Date().getDay()),
             intervalDays: "7",
+            daysOn: "5",
+            daysOff: "2",
             timeSlot: "morning",
             timeOfDay: "08:00",
             startDate: todayIso,
@@ -345,6 +414,8 @@ export function scheduleToFormValues(
         frequencyType: schedule.frequencyType,
         weekdays,
         intervalDays: schedule.intervalDays?.toString() ?? "7",
+        daysOn: schedule.daysOn?.toString() ?? "5",
+        daysOff: schedule.daysOff?.toString() ?? "2",
         timeSlot: slotForTime(schedule.timeOfDay),
         timeOfDay: schedule.timeOfDay,
         startDate: isoDateOnly(schedule.startDate) ?? todayIso,
@@ -379,6 +450,14 @@ export function toScheduleInput(values: ScheduleFormValues): ScheduleInput {
         intervalDays:
             values.frequencyType === "custom_interval"
                 ? parseFormNumber(values.intervalDays) ?? Number.NaN
+                : undefined,
+        daysOn:
+            values.frequencyType === "cycle"
+                ? parseFormNumber(values.daysOn) ?? Number.NaN
+                : undefined,
+        daysOff:
+            values.frequencyType === "cycle"
+                ? parseFormNumber(values.daysOff) ?? Number.NaN
                 : undefined,
         timeOfDay,
         startDate: values.startDate.trim(),

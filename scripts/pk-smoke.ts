@@ -355,6 +355,43 @@ function main() {
         futureOff.counts.get(med.id)?.projected === 0
     );
 
+    // Cycle schedules feed the concentration graph only on their on-days.
+    const cycleSchedule = schedule("s-cycle", med.id, {
+        frequencyType: "cycle",
+        daysOn: 2,
+        daysOff: 1,
+        startDate: "2026-01-14",
+    });
+    const cycleCollected = collectDoseEvents(
+        [med],
+        [cycleSchedule],
+        [],
+        {
+            start: d(2026, 1, 14).getTime(),
+            end: d(2026, 1, 19, 12).getTime(),
+            now: NOW.getTime(),
+            profiles: flatProfiles,
+            includePastScheduledDoses: true,
+            includeFutureScheduledDoses: true,
+            pruneThreshold: 1e-6,
+            maxScheduledLookbackDays: 3650,
+        }
+    );
+    const cycleDays = cycleCollected.events
+        .map((e) => new Date(e.timestamp).getDate())
+        .join(",");
+    check(
+        "cycle 2-on/1-off produces on-day events only (14,15,17,18)",
+        cycleDays === "14,15,17,18",
+        cycleDays
+    );
+    check(
+        "cycle projected doses after now are marked for the graph",
+        cycleCollected.counts.get(med.id)?.scheduled === 4 &&
+        cycleCollected.counts.get(med.id)?.projected === 2,
+        JSON.stringify(cycleCollected.counts.get(med.id))
+    );
+
     // Legacy logs (no scheduledFor) match their occurrence by schedule + day.
     const legacySchedule = schedule("s2", med.id, {startDate: "2026-01-13"});
     const legacyLog = doseLog("l2", med.id, 1, "mg", d(2026, 1, 13, 9), {

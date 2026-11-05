@@ -19,6 +19,7 @@ import {
     type Medication,
     MIGRATIONS,
     runMigrations,
+    type Schedule,
     SCHEMA_VERSION_KEY,
 } from "../lib/db";
 import {
@@ -83,8 +84,8 @@ async function main() {
     // ------------------------------------------------------------ v8
     const result = await ensureDatabase();
     check(
-        "fresh database stamps schema v9",
-        result.to === LATEST_SCHEMA_VERSION && LATEST_SCHEMA_VERSION === 9,
+        "fresh database stamps the latest schema",
+        result.to === LATEST_SCHEMA_VERSION && LATEST_SCHEMA_VERSION === 10,
         `got ${result.to}`
     );
 
@@ -139,10 +140,10 @@ async function main() {
     const afterMigration = await db.medications.toArray();
     const byId = new Map(afterMigration.map((m) => [m.id, m]));
     check(
-        "migration reports v1 → v9",
+        "migration reports v1 → v10",
         migrated.from === 1 &&
-        migrated.to === 9 &&
-        migrated.applied.join() === "2,3,4,5,6,7,8,9",
+        migrated.to === 10 &&
+        migrated.applied.join() === "2,3,4,5,6,7,8,9,10",
         `got ${migrated.from} → ${migrated.to} (${migrated.applied.join()})`
     );
     check(
@@ -457,6 +458,33 @@ async function main() {
         "stock covers 20 days",
         daysOfStockRemaining(bpc, schedules) === 20,
         `got ${daysOfStockRemaining(bpc, schedules)}`
+    );
+
+    const cycleSchedules: Schedule[] = [
+        {
+            id: "sched-cycle",
+            medicationId: bpc.id,
+            doseAmount: 250,
+            unit: "mcg",
+            frequencyType: "cycle",
+            daysOn: 5,
+            daysOff: 2,
+            timeOfDay: "08:00",
+            startDate: now,
+            active: true,
+        },
+    ];
+    const cycleDaily = dailyAmountInUnit(bpc, cycleSchedules);
+    check(
+        "cycle usage averages on/off days (5 on / 2 off → 5/7 of a dose per day)",
+        cycleDaily !== null && Math.abs(cycleDaily - 1250 / 7) < 1e-9,
+        `got ${cycleDaily}`
+    );
+    const cycleDaysLeft = daysOfStockRemaining(bpc, cycleSchedules);
+    check(
+        "cycle stock runway accounts for the off-days (5000 mcg → 28 days)",
+        cycleDaysLeft !== null && Math.abs(cycleDaysLeft - 28) < 1e-9,
+        `got ${cycleDaysLeft}`
     );
     check("duration formatting", formatStockDuration(20) === "20 days" &&
         formatStockDuration(0.5) === "< 1 day" &&

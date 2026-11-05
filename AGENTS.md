@@ -128,14 +128,21 @@ interface Medication {
 
 ### 3.2 Schedule & Dosing Log
 
+> **v10:** schedules gain a `cycle` frequency — `daysOn` consecutive dosing days followed by
+> `daysOff` skipped days, repeating from `startDate` (e.g. 5 days on / 2 days off). One dose is due
+> on each on-day. Occurrence expansion, next-dose lookup, stock-runway averages and PK chart
+> projections all derive from the same `scheduleFiresOnDay` rule.
+
 ```ts
 interface Schedule {
     id: string;
     medicationId: string;
     doseAmount: number;
   unit: DoseUnit;
-    frequencyType: 'daily' | 'weekly' | 'custom_interval';
+  frequencyType: 'daily' | 'weekly' | 'custom_interval' | 'cycle';
     intervalDays?: number; // Used if frequencyType === 'custom_interval'
+  daysOn?: number;       // Used if frequencyType === 'cycle'
+  daysOff?: number;      // Used if frequencyType === 'cycle'
     timeOfDay: string; // "HH:MM"
     startDate: string; // ISO Date
     active: boolean;

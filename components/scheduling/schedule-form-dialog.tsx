@@ -63,6 +63,8 @@ function draftSchedule(values: ScheduleFormValues): Schedule {
         frequencyType: values.frequencyType,
         weekdays: WEEKDAYS.filter((_, index) => values.weekdays[index]),
         intervalDays: parseDecimalInput(values.intervalDays),
+        daysOn: parseDecimalInput(values.daysOn),
+        daysOff: parseDecimalInput(values.daysOff),
         timeOfDay,
         startDate: /^\d{4}-\d{2}-\d{2}$/.test(rawStart) ? rawStart : dateOnlyIso(new Date()),
         active: true,
@@ -103,6 +105,7 @@ function ScheduleForm({schedule, medications, onSaved, onCancel}: ScheduleFormPr
     const medicationId = watched.medicationId ?? "";
     const isWeekly = frequencyType === "weekly";
     const isCustom = frequencyType === "custom_interval";
+    const isCycle = frequencyType === "cycle";
 
     const selectedMedication = React.useMemo(
         () => medications.find((medication) => medication.id === medicationId) ?? null,
@@ -231,7 +234,7 @@ function ScheduleForm({schedule, medications, onSaved, onCancel}: ScheduleFormPr
                                     <div
                                         role="radiogroup"
                                         aria-label="Frequency"
-                                        className="grid grid-cols-3 gap-1 rounded-lg border p-1"
+                                        className="grid grid-cols-2 gap-1 rounded-lg border p-1 sm:grid-cols-4"
                                     >
                                         {FREQUENCY_TYPES.map((type) => {
                                             const selected = field.value === type;
@@ -336,6 +339,63 @@ function ScheduleForm({schedule, medications, onSaved, onCancel}: ScheduleFormPr
                                 </FormItem>
                             )}
                         />
+                    )}
+
+                    {isCycle && (
+                        <div className="grid grid-cols-2 gap-3">
+                            <FormField
+                                control={form.control}
+                                name="daysOn"
+                                render={({field}) => (
+                                    <FormItem>
+                                        <FormLabel>Days on</FormLabel>
+                                        <div className="relative">
+                                            <FormControl>
+                                                <Input
+                                                    inputMode="numeric"
+                                                    placeholder="5"
+                                                    className="pr-12 tabular-nums"
+                                                    {...field}
+                                                />
+                                            </FormControl>
+                                            <span
+                                                className="text-muted-foreground pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs">
+                                                days
+                                            </span>
+                                        </div>
+                                        <FormMessage/>
+                                    </FormItem>
+                                )}
+                            />
+                            <FormField
+                                control={form.control}
+                                name="daysOff"
+                                render={({field}) => (
+                                    <FormItem>
+                                        <FormLabel>Days off</FormLabel>
+                                        <div className="relative">
+                                            <FormControl>
+                                                <Input
+                                                    inputMode="numeric"
+                                                    placeholder="2"
+                                                    className="pr-12 tabular-nums"
+                                                    {...field}
+                                                />
+                                            </FormControl>
+                                            <span
+                                                className="text-muted-foreground pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs">
+                                                days
+                                            </span>
+                                        </div>
+                                        <FormMessage/>
+                                    </FormItem>
+                                )}
+                            />
+                            <p className="text-muted-foreground col-span-2 text-xs">
+                                One dose on each on-day, then the off-days repeat from the start
+                                date — e.g. 5 on / 2 off.
+                            </p>
+                        </div>
                     )}
 
                     <div className="grid gap-4 sm:grid-cols-2">

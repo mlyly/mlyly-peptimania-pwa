@@ -85,7 +85,7 @@ export interface Medication {
     updatedAt: string;
 }
 
-export type FrequencyType = "daily" | "weekly" | "custom_interval";
+export type FrequencyType = "daily" | "weekly" | "custom_interval" | "cycle";
 
 /** Calendar weekday, 0 = Sunday … 6 = Saturday. */
 export type Weekday = 0 | 1 | 2 | 3 | 4 | 5 | 6;
@@ -109,6 +109,13 @@ export interface Schedule {
     weekdays?: Weekday[];
     /** Whole days between doses; required when frequencyType === "custom_interval". */
     intervalDays?: number;
+    /**
+     * Whole consecutive days dosed, then whole days skipped, repeating from
+     * `startDate` — required when frequencyType === "cycle" (e.g. 5 days on,
+     * 2 days off). A dose is due on each "on" day.
+     */
+    daysOn?: number;
+    daysOff?: number;
     /** Local time of day, "HH:MM". */
     timeOfDay: string;
     /** First day the schedule is due, local calendar date "YYYY-MM-DD". */

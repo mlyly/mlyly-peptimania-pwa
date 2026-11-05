@@ -278,7 +278,21 @@ async function main() {
         startDate: "2026-01-01",
         active: true,
     };
-    // G: inactive — never fires.
+    // G: 5 days on / 2 days off from Mon 5 Jan. 5–9 on, 10–11 off,
+    //    12–16 on, 17–18 off; 15 Jan (offset 10) is an on-day.
+    const cycle: Schedule = {
+        id: "sched-cycle",
+        medicationId: med,
+        doseAmount: 3,
+        unit: "mg",
+        frequencyType: "cycle",
+        daysOn: 5,
+        daysOff: 2,
+        timeOfDay: "07:00",
+        startDate: "2026-01-05",
+        active: true,
+    };
+    // H: inactive — never fires.
     const inactive: Schedule = {
         id: "sched-inactive",
         medicationId: med,
@@ -312,23 +326,38 @@ async function main() {
         !scheduleFiresOnDay(everyThree, NOW)
     );
     check("an invalid interval (0) never fires", !scheduleFiresOnDay({...everyThree, intervalDays: 0}, NOW));
+    check(
+        "cycle fires on on-days and skips off-days",
+        scheduleFiresOnDay(cycle, d(2026, 1, 15)) &&
+        !scheduleFiresOnDay(cycle, d(2026, 1, 10)) &&
+        !scheduleFiresOnDay(cycle, d(2026, 1, 11)) &&
+        scheduleFiresOnDay(cycle, d(2026, 1, 12))
+    );
+    check(
+        "cycle never fires before its start date",
+        !scheduleFiresOnDay(cycle, d(2026, 1, 4))
+    );
+    check(
+        "a cycle missing days off never fires",
+        !scheduleFiresOnDay({...cycle, daysOff: 0}, NOW)
+    );
     check("an inactive schedule never fires", !scheduleFiresOnDay(inactive, NOW));
 
     // Expansion + ordering.
     const jan15 = startOfLocalDay(NOW);
     const expanded = expandSchedules(
-        [dailyEarly, dailyNoon, dailyDue, weekly, everyThree, inactive],
+        [dailyEarly, dailyNoon, dailyDue, weekly, everyThree, cycle, inactive],
         jan15,
         jan15
     );
     check(
-        "Jan 15 expands to the 4 firing schedules (inactive + off-interval excluded)",
-        expanded.length === 4,
+        "Jan 15 expands to the 5 firing schedules (inactive + off-interval excluded)",
+        expanded.length === 5,
         `got ${expanded.length}: ${expanded.map((o) => o.scheduleId).join(", ")}`
     );
     check(
-        "occurrences are time-ordered (08:00, 09:00, 10:00, 12:00)",
-        JSON.stringify(expanded.map((o) => o.timeOfDay)) === JSON.stringify(["08:00", "09:00", "10:00", "12:00"]),
+        "occurrences are time-ordered (07:00, 08:00, 09:00, 10:00, 12:00)",
+        JSON.stringify(expanded.map((o) => o.timeOfDay)) === JSON.stringify(["07:00", "08:00", "09:00", "10:00", "12:00"]),
         JSON.stringify(expanded.map((o) => o.timeOfDay))
     );
     check(
@@ -337,7 +366,8 @@ async function main() {
     );
     check(
         "a stable key is schedule@date",
-        expanded[0].key === `sched-daily-early@${dateOnlyIso(jan15)}`
+        expanded.find((o) => o.scheduleId === "sched-daily-early")?.key ===
+        `sched-daily-early@${dateOnlyIso(jan15)}`
     );
 
     const weekRange = rangeAgenda(
@@ -352,6 +382,20 @@ async function main() {
         weekRange.length === 11 &&
         weekRange.map((o) => o.date.getDate()).join(",") === "1,4,7,10,13,16,19,22,25,28,31",
         weekRange.map((o) => o.date.getDate()).join(",")
+    );
+
+    const cycleRange = rangeAgenda(
+        [cycle],
+        [],
+        d(2026, 1, 5),
+        d(2026, 1, 18),
+        NOW
+    );
+    check(
+        "5-on/2-off cycle expands to the 10 on-days across two periods",
+        cycleRange.length === 10 &&
+        cycleRange.map((o) => o.date.getDate()).join(",") === "5,6,7,8,9,12,13,14,15,16",
+        cycleRange.map((o) => o.date.getDate()).join(",")
     );
 
     // The safety bound guards against pathological ranges.
@@ -485,6 +529,15 @@ async function main() {
         "nextOccurrence of every-3 lands on 16 Jan",
         nextOccurrence(everyThree, NOW)?.getDate() === 16
     );
+    check(
+        "nextOccurrence of the cycle skips the off-days and lands on the next on-day",
+        nextOccurrence(cycle, NOW)?.getDate() === 16,
+        nextOccurrence(cycle, NOW)?.toISOString()
+    );
+    check(
+        "nextOccurrence of a cycle crossed into its off-run waits for the next on-run",
+        nextOccurrence(cycle, d(2026, 1, 11, 8))?.getDate() === 12
+    );
     check("nextOccurrence of an inactive schedule is null", nextOccurrence(inactive, NOW) === null);
     check(
         "a malformed custom interval (0) has no next occurrence",
@@ -505,6 +558,12 @@ async function main() {
         "cadence label: every 3 → 'Every 3 days' (singular for 1)",
         scheduleCadenceLabel(everyThree) === "Every 3 days" &&
         scheduleCadenceLabel({...everyThree, intervalDays: 1}) === "Every 1 day"
+    );
+    check(
+        "cadence label: cycle → '5 days on · 2 days off' (singular-aware)",
+        scheduleCadenceLabel(cycle) === "5 days on · 2 days off" &&
+        scheduleCadenceLabel({...cycle, daysOn: 1, daysOff: 1}) === "1 day on · 1 day off",
+        scheduleCadenceLabel(cycle)
     );
     check(
         "summary line joins cadence and clock time",
@@ -552,6 +611,42 @@ async function main() {
         "scheduleInputSchema rejects a non-integer interval",
         !scheduleInputSchema.safeParse({...dailyInput, frequencyType: "custom_interval", intervalDays: 2.5}).success
     );
+
+    const cycleMissing = scheduleInputSchema.safeParse({
+        ...dailyInput,
+        frequencyType: "cycle",
+        daysOn: 5,
+    });
+    check(
+        "scheduleInputSchema requires both daysOn and daysOff for a cycle",
+        !cycleMissing.success &&
+        cycleMissing.error.issues.some((issue) => issue.path.includes("daysOff")),
+        cycleMissing.success ? "parsed unexpectedly" : JSON.stringify(cycleMissing.error.issues)
+    );
+    check(
+        "scheduleInputSchema accepts a valid cycle",
+        scheduleInputSchema.safeParse({
+            ...dailyInput,
+            frequencyType: "cycle",
+            daysOn: 5,
+            daysOff: 2,
+        }).success
+    );
+    check(
+        "scheduleInputSchema rejects non-positive / fractional cycle runs",
+        !scheduleInputSchema.safeParse({
+            ...dailyInput,
+            frequencyType: "cycle",
+            daysOn: 0,
+            daysOff: 2,
+        }).success &&
+        !scheduleInputSchema.safeParse({
+            ...dailyInput,
+            frequencyType: "cycle",
+            daysOn: 5,
+            daysOff: 1.5,
+        }).success
+    );
     check(
         "scheduleInputSchema rejects an out-of-range weekday",
         !scheduleInputSchema.safeParse({...dailyInput, frequencyType: "weekly", weekdays: [1, 8]}).success
@@ -595,6 +690,30 @@ async function main() {
             scheduleInputSchema.parse({...dailyInput, frequencyType: "custom_interval", intervalDays: 3})
         ).intervalDays === 3
     );
+    const normalizedCycle = canonicalScheduleInput(
+        scheduleInputSchema.parse({
+            ...dailyInput,
+            frequencyType: "cycle",
+            daysOn: 5,
+            daysOff: 2,
+            intervalDays: 3, // stale — must be dropped for cycle
+        })
+    );
+    check(
+        "canonicalScheduleInput keeps daysOn/daysOff only in cycle mode",
+        normalizedCycle.daysOn === 5 &&
+        normalizedCycle.daysOff === 2 &&
+        normalizedCycle.intervalDays === undefined,
+        JSON.stringify(normalizedCycle)
+    );
+    check(
+        "canonicalScheduleInput drops cycle fields outside cycle mode",
+        canonicalScheduleInput(scheduleInputSchema.parse({
+            ...dailyInput,
+            daysOn: 5,
+            daysOff: 2,
+        })).daysOn === undefined
+    );
 
     // The dialog's string-typed mirror.
     const formValues: ScheduleFormValues = {
@@ -604,6 +723,8 @@ async function main() {
         frequencyType: "daily",
         weekdays: [false, false, false, false, false, false, false],
         intervalDays: "",
+        daysOn: "5",
+        daysOff: "2",
         timeSlot: "morning",
         timeOfDay: "08:00",
         startDate: "2026-01-01",
@@ -630,6 +751,36 @@ async function main() {
     check(
         "scheduleFormSchema accepts a 1-day custom interval",
         scheduleFormSchema.safeParse({...formValues, frequencyType: "custom_interval", intervalDays: "1"}).success
+    );
+    check(
+        "scheduleFormSchema accepts a valid cycle",
+        scheduleFormSchema.safeParse({
+            ...formValues,
+            frequencyType: "cycle",
+            daysOn: "5",
+            daysOff: "2",
+        }).success
+    );
+    check(
+        "scheduleFormSchema rejects empty or invalid cycle runs",
+        !scheduleFormSchema.safeParse({
+            ...formValues,
+            frequencyType: "cycle",
+            daysOn: "",
+            daysOff: "2",
+        }).success &&
+        !scheduleFormSchema.safeParse({
+            ...formValues,
+            frequencyType: "cycle",
+            daysOn: "5",
+            daysOff: "0",
+        }).success &&
+        !scheduleFormSchema.safeParse({
+            ...formValues,
+            frequencyType: "cycle",
+            daysOn: "5.5",
+            daysOff: "2",
+        }).success
     );
     check(
         "scheduleFormSchema rejects an unparseable custom time",
@@ -670,6 +821,25 @@ async function main() {
     );
     check("toScheduleInput keeps the interval in custom mode", fromCustomInterval.intervalDays === 3);
 
+    const fromCycle = toScheduleInput(
+        scheduleFormSchema.parse({
+            ...formValues,
+            frequencyType: "cycle",
+            daysOn: "5",
+            daysOff: "2",
+        })
+    );
+    check(
+        "toScheduleInput keeps daysOn/daysOff in cycle mode and drops the interval",
+        fromCycle.daysOn === 5 &&
+        fromCycle.daysOff === 2 &&
+        fromCycle.intervalDays === undefined
+    );
+    check(
+        "toScheduleInput drops cycle fields outside cycle mode",
+        fromForm.daysOn === undefined && fromForm.daysOff === undefined
+    );
+
     // Edit mode: a stored schedule re-enters the dialog in its own shape.
     const editSource: Schedule = {
         id: "sched-x",
@@ -699,6 +869,19 @@ async function main() {
         fromEdit.startDate
     );
     check("scheduleToFormValues keeps the paused flag", fromEdit.active === false);
+
+    const fromCycleEdit = scheduleToFormValues(cycle);
+    check(
+        "scheduleToFormValues restores cycle days on/off",
+        fromCycleEdit.frequencyType === "cycle" &&
+        fromCycleEdit.daysOn === "5" &&
+        fromCycleEdit.daysOff === "2",
+        JSON.stringify({
+            frequencyType: fromCycleEdit.frequencyType,
+            daysOn: fromCycleEdit.daysOn,
+            daysOff: fromCycleEdit.daysOff,
+        })
+    );
 
     // Create mode: dialog defaults.
     const createDefaults = scheduleToFormValues(null, {id: "med-9", unit: "mcg"});
@@ -739,7 +922,7 @@ async function main() {
         !doseLogInputSchema.safeParse({medicationId: med, doseAmount: 1, unit: "mcg", notes: "x".repeat(2001)}).success
     );
 
-    // ============================================================ v2 → v4 migration
+    // =========================================================== v2 → v10 migration
     await ensureDatabase();
 
     // Simulate a v2-era database: meta says 2, with legacy weekly rows
@@ -777,8 +960,8 @@ async function main() {
 
     const migrated = await runMigrations();
     check(
-        "runMigrations reports v2 → v8 (applies v3 + v4 + v5 + v6 + v7 + v8)",
-        migrated.from === 2 && migrated.to === 8 && migrated.applied.join() === "3,4,5,6,7,8",
+        "runMigrations reports v2 → v10 (applies v3 … v10)",
+        migrated.from === 2 && migrated.to === 10 && migrated.applied.join() === "3,4,5,6,7,8,9,10",
         `got ${migrated.from} → ${migrated.to} (${migrated.applied.join()})`
     );
 
@@ -928,6 +1111,27 @@ async function main() {
         JSON.stringify(weeklyStored.weekdays)
     );
 
+    const cycleInput: ScheduleInput = {
+        ...dailyInput,
+        frequencyType: "cycle",
+        daysOn: 5,
+        daysOff: 2,
+        startDate: "2026-01-06",
+    };
+    const cycleSched = await createSchedule(cycleInput);
+    const cycleStored = (await db.schedules.get(cycleSched.id))!;
+    check(
+        "createSchedule stores cycle days on/off",
+        cycleStored.frequencyType === "cycle" &&
+        cycleStored.daysOn === 5 &&
+        cycleStored.daysOff === 2 &&
+        cycleStored.intervalDays === undefined,
+        JSON.stringify(cycleStored)
+    );
+
+    await expectError("createSchedule rejects a cycle without days off", () =>
+        createSchedule({...dailyInput, frequencyType: "cycle", daysOn: 5})
+    );
     await expectError("createSchedule rejects a zero dose", () =>
         createSchedule({...dailyInput, doseAmount: 0})
     );
@@ -950,7 +1154,8 @@ async function main() {
     const listed = await listSchedules();
     check(
         "listSchedules orders by start date (oldest first)",
-        listed.map((s) => s.id).join(",") === [created, later, weeklySched].map((s) => s.id).join(","),
+        listed.map((s) => s.id).join(",") ===
+        [created, later, weeklySched, cycleSched].map((s) => s.id).join(","),
         listed.map((s) => s.startDate).join(",")
     );
 
@@ -975,7 +1180,16 @@ async function main() {
         "updateSchedule clears frequency-specific fields (PUT semantics)",
         backToDaily.frequencyType === "daily" &&
         backToDaily.weekdays === undefined &&
-        backToDaily.intervalDays === undefined
+        backToDaily.intervalDays === undefined &&
+        backToDaily.daysOn === undefined &&
+        backToDaily.daysOff === undefined
+    );
+    const cycleToDaily = await updateSchedule(cycleSched.id, dailyInput);
+    check(
+        "updateSchedule clears cycle fields when switching to daily",
+        cycleToDaily.frequencyType === "daily" &&
+        cycleToDaily.daysOn === undefined &&
+        cycleToDaily.daysOff === undefined
     );
     await expectError("updateSchedule rejects a missing schedule", () =>
         updateSchedule("does-not-exist", dailyInput)

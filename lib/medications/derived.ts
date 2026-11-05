@@ -320,14 +320,31 @@ export function dailyAmountInUnit(
             medication
         );
         if (!converted) return null;
-        const perDay =
-            schedule.frequencyType === "daily"
-                ? 1
-                : schedule.frequencyType === "weekly"
-                    ? Math.max(1, schedule.weekdays?.length ?? 1) / 7
-                    : schedule.intervalDays && schedule.intervalDays > 0
-                        ? 1 / schedule.intervalDays
+        let perDay: number | null;
+        switch (schedule.frequencyType) {
+            case "daily":
+                perDay = 1;
+                break;
+            case "weekly":
+                perDay = Math.max(1, schedule.weekdays?.length ?? 1) / 7;
+                break;
+            case "custom_interval":
+                perDay = schedule.intervalDays && schedule.intervalDays > 0
+                    ? 1 / schedule.intervalDays
+                    : null;
+                break;
+            case "cycle":
+                perDay =
+                    schedule.daysOn &&
+                    schedule.daysOn > 0 &&
+                    schedule.daysOff &&
+                    schedule.daysOff > 0
+                        ? schedule.daysOn / (schedule.daysOn + schedule.daysOff)
                         : null;
+                break;
+            default:
+                perDay = null;
+        }
         if (perDay === null || perDay <= 0) return null;
         total += converted.value * perDay;
     }

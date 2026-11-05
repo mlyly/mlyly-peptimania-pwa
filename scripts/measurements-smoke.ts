@@ -95,8 +95,8 @@ async function main() {
     // ============================================================ v8 pipeline
     const result = await ensureDatabase();
     check(
-        "fresh database lands at v8",
-        LATEST_SCHEMA_VERSION === 9 && result.to === 9,
+        "fresh database lands at the latest schema (v10)",
+        LATEST_SCHEMA_VERSION === 10 && result.to === 10,
         `to=${result.to}`
     );
 

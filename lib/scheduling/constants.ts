@@ -7,12 +7,13 @@ import {Clock, type LucideIcon, Moon, Sun, Sunrise, Sunset} from "lucide-react";
 
 import type {FrequencyType, Weekday} from "@/lib/db/types";
 
-export const FREQUENCY_TYPES = ["daily", "weekly", "custom_interval"] as const;
+export const FREQUENCY_TYPES = ["daily", "weekly", "custom_interval", "cycle"] as const;
 
 export const FREQUENCY_LABELS: Record<FrequencyType, string> = {
     daily: "Daily",
     weekly: "Weekly",
     custom_interval: "Custom interval",
+    cycle: "Days on/off",
 };
 
 /** 0 = Sunday … 6 = Saturday. */

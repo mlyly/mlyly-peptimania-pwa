@@ -30,7 +30,7 @@ export interface SchemaVersion {
     stores: Record<string, string>;
 }
 
-export const LATEST_SCHEMA_VERSION = 9;
+export const LATEST_SCHEMA_VERSION = 10;
 
 /**
  * Index declarations. Primary keys (`id`) are non-indexed UUIDs; other fields
@@ -113,6 +113,13 @@ export const SCHEMA_VERSIONS: SchemaVersion[] = [
         // PK modeling (oral/subcutaneous absorption phases). Additive — existing
         // rows remain valid with absent fields.
         version: 9,
+        stores: {},
+    },
+    {
+        // v10 adds the "cycle" schedule frequency (X days on / Y days off) with
+        // optional `daysOn` / `daysOff` fields. Additive — existing schedules
+        // keep their current frequency and stay valid.
+        version: 10,
         stores: {},
     },
 ];
@@ -475,6 +482,19 @@ export const MIGRATIONS: Migration[] = [
             "Pharmacokinetics: medications gain optional absorption parameters " +
             "(absorptionRatePerHour/absorptionHalfLifeHours) for first-order " +
             "absorption modeling in concentration curves. Additive.",
+        up: () => {
+            // Additive optional fields: nothing to transform on the live database.
+        },
+        upSnapshot: () => {
+            // Additive optional fields: import payloads from older versions are
+            // accepted as-is.
+        },
+    },
+    {
+        version: 10,
+        description:
+            "Scheduling: new 'cycle' frequency (X days on / Y days off) backed " +
+            "by optional `daysOn` / `daysOff` schedule fields. Additive.",
         up: () => {
             // Additive optional fields: nothing to transform on the live database.
         },

@@ -55,6 +55,12 @@ export const OVERDUE_GRACE_MINUTES = 60;
 export const MAX_EXPANSION_DAYS = 400;
 
 /**
+ * How far ahead `nextOccurrence` scans. A cycle can be up to 365 on + 365 off
+ * days, so one full period plus a day is enough to find the next on-day.
+ */
+const MAX_NEXT_LOOKAHEAD_DAYS = 731;
+
+/**
  * True when the schedule fires on the given calendar day. An inactive
  * (paused) schedule never fires.
  *
@@ -63,6 +69,8 @@ export const MAX_EXPANSION_DAYS = 400;
  *    the weekday of `startDate`, matching the legacy "once a week" behavior).
  *  - `custom_interval`: every `intervalDays` days, anchored on `startDate`
  *    (i.e. days at whole-multiple offsets from the start).
+ *  - `cycle`: `daysOn` consecutive dosing days followed by `daysOff` skipped
+ *    days, repeating from `startDate`.
  */
 export function scheduleFiresOnDay(schedule: Schedule, day: Date): boolean {
     if (!schedule.active) return false;
@@ -85,6 +93,12 @@ export function scheduleFiresOnDay(schedule: Schedule, day: Date): boolean {
             const interval = schedule.intervalDays;
             if (!interval || interval < 1) return false;
             return offset % interval === 0;
+        }
+        case "cycle": {
+            const daysOn = schedule.daysOn;
+            const daysOff = schedule.daysOff;
+            if (!daysOn || daysOn < 1 || !daysOff || daysOff < 1) return false;
+            return offset % (daysOn + daysOff) < daysOn;
         }
     }
 }
@@ -280,13 +294,14 @@ export function completionSummary(
 }
 
 /**
- * Next occurrence of a schedule at or after `from` (scans up to a year
- * ahead). Returns null for schedules that never fire (e.g. a malformed
- * custom interval) or that are inactive.
+ * Next occurrence of a schedule at or after `from` (scans far enough ahead to
+ * cover the longest custom interval or on/off cycle). Returns null for
+ * schedules that never fire (e.g. a malformed custom interval) or that are
+ * inactive.
  */
 export function nextOccurrence(schedule: Schedule, from: Date = new Date()): Date | null {
     if (!schedule.active) return null;
-    for (let offset = 0; offset <= 365; offset += 1) {
+    for (let offset = 0; offset <= MAX_NEXT_LOOKAHEAD_DAYS; offset += 1) {
         const day = addDays(from, offset);
         if (!scheduleFiresOnDay(schedule, day)) continue;
         const at = atTimeOfDay(day, schedule.timeOfDay);
@@ -311,6 +326,11 @@ export function scheduleCadenceLabel(schedule: Schedule): string {
             return schedule.intervalDays
                 ? `Every ${schedule.intervalDays} ${schedule.intervalDays === 1 ? "day" : "days"}`
                 : "Custom";
+        case "cycle":
+            return schedule.daysOn && schedule.daysOff
+                ? `${schedule.daysOn} ${schedule.daysOn === 1 ? "day" : "days"} on · ` +
+                `${schedule.daysOff} ${schedule.daysOff === 1 ? "day" : "days"} off`
+                : "Days on/off";
     }
 }
 
