@@ -6,9 +6,15 @@ import {CheckIcon, ChevronRightIcon, CircleIcon} from "lucide-react"
 import {DropdownMenu as DropdownMenuPrimitive} from "radix-ui"
 
 function DropdownMenu({
+                          modal = false,
                           ...props
                       }: React.ComponentProps<typeof DropdownMenuPrimitive.Root>) {
-    return <DropdownMenuPrimitive.Root data-slot="dropdown-menu" {...props} />
+    // Non-modal by default: modal menus lock document scrolling via
+    // react-remove-scroll, which rewrites body styles on open and restores
+    // them on close — visibly shifting the page (e.g. the header title).
+    // Menus still close on outside pointer/focus; pass `modal` explicitly
+    // where a focus-trapping menu is actually needed.
+    return <DropdownMenuPrimitive.Root data-slot="dropdown-menu" modal={modal} {...props} />
 }
 
 function DropdownMenuPortal({
