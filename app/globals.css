@@ -170,6 +170,19 @@ body {
     }
 }
 
+@media (hover: none) and (pointer: coarse) {
+    /*
+     * App-like zoom lock for touch-first (mobile) devices. `pan-x pan-y`
+     * keeps scrolling and pinch-free panning available but removes pinch-zoom
+     * and double-tap zoom. Desktop pointers ignore this rule, so browser zoom
+     * (Ctrl/Cmd +/-, trackpad pinch) remains available there.
+     */
+    html,
+    body {
+        touch-action: pan-x pan-y;
+    }
+}
+
 @media (pointer: coarse) {
     [data-slot="button"],
     [data-slot="select-trigger"] {

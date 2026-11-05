@@ -8,6 +8,7 @@ import {OfflineBanner} from "@/components/app/offline-banner";
 import {Toaster} from "@/components/ui/toaster";
 import {TermsGate} from "@/components/legal/terms-gate";
 import {ServiceWorkerRegister} from "@/components/pwa/service-worker-register";
+import {MobileZoomLock} from "@/components/pwa/mobile-zoom-lock";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -45,6 +46,12 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
     width: "device-width",
     initialScale: 1,
+    // App-like feel on phones/tablets: no pinch or double-tap zoom. Desktop
+    // browsers ignore these values for page zoom, so desktop zoom still works.
+    // Android Chrome ignores `user-scalable=no`, so `MobileZoomLock` adds a
+    // touch guard; the CSS media query below covers the scroll/pinch surface.
+    maximumScale: 1,
+    userScalable: false,
     viewportFit: "cover",
     themeColor: [
         {media: "(prefers-color-scheme: light)", color: "#ffffff"},
@@ -102,6 +109,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         </div>
     </footer>
     <ServiceWorkerRegister/>
+    <MobileZoomLock/>
     </body>
     </html>
   );
