@@ -132,6 +132,12 @@ interface Medication {
 > `daysOff` skipped days, repeating from `startDate` (e.g. 5 days on / 2 days off). One dose is due
 > on each on-day. Occurrence expansion, next-dose lookup, stock-runway averages and PK chart
 > projections all derive from the same `scheduleFiresOnDay` rule.
+>
+> **Injection-site capture:** checking off a peptide/injection dose opens a body-map dialog
+> (`components/dose-logs/injection-site-dialog.tsx`). The selected approximate area — e.g.
+> "Left lower abdomen", "Right upper thigh", "Left buttock" — is stored verbatim in the existing
+> free-text `injectionSite` field. Non-injectable types log directly, and "Skip site" leaves the
+> field unset.
 
 ```ts
 interface Schedule {

@@ -103,3 +103,14 @@ export const MEDICATION_TYPE_META: Record<MedicationType, MedicationTypeMeta> = 
 export function medicationTypeMeta(type: MedicationType): MedicationTypeMeta {
     return MEDICATION_TYPE_META[type] ?? MEDICATION_TYPE_META.other;
 }
+
+/**
+ * Whether a medication is normally injected — used by the scheduling
+ * check-off flow to decide if it should prompt for an injection site.
+ * `liquid` is assumed oral (see `MEDICATION_TYPE_META`), so it is excluded.
+ */
+export function isInjectableMedicationType(
+    type: MedicationType | null | undefined
+): boolean {
+    return type === "peptide" || type === "injection";
+}

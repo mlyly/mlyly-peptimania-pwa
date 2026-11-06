@@ -4,11 +4,13 @@ import * as React from "react";
 import {ChevronLeft, ChevronRight} from "lucide-react";
 
 import type {MedicationType} from "@/lib/db/types";
+import {isInjectableMedicationType} from "@/lib/medications/constants";
 import {addDays, dateOnlyIso, formatMonthYear, isSameLocalDay, startOfLocalDay,} from "@/lib/scheduling/dates";
 import {matchingDoseLog, type Occurrence, rangeAgenda} from "@/lib/scheduling/occurrences";
 import {deleteDoseLog, logDose} from "@/lib/scheduling/service";
 import {cn} from "@/lib/utils";
 
+import {InjectionSiteDialog} from "@/components/dose-logs/injection-site-dialog";
 import {Button} from "@/components/ui/button";
 import {type ChecklistItem, ChecklistRow,} from "./today-checklist";
 import type {TrackerData} from "./use-tracker-data";
@@ -65,6 +67,8 @@ export function ScheduleCalendar({
         [data.schedules]
     );
     const [actingKey, setActingKey] = React.useState<string | null>(null);
+    /** Occurrence waiting for its injection site in the body-map dialog. */
+    const [sitePrompt, setSitePrompt] = React.useState<ChecklistItem | null>(null);
 
     const viewYear = selectedDate.getFullYear();
     const viewMonth = selectedDate.getMonth();
@@ -110,10 +114,40 @@ export function ScheduleCalendar({
         [selectedOccurrences, data.doseLogs, medications, schedules]
     );
 
+    const logItem = React.useCallback(
+        async (item: ChecklistItem, injectionSite: string | undefined): Promise<boolean> => {
+            const {occurrence} = item;
+            setActingKey(occurrence.key);
+            try {
+                await logDose({
+                    medicationId: occurrence.medicationId,
+                    scheduleId: occurrence.scheduleId,
+                    doseAmount: occurrence.doseAmount,
+                    unit: occurrence.unit,
+                    scheduledFor: occurrence.scheduledFor,
+                    injectionSite,
+                });
+                onChanged();
+                return true;
+            } catch (error: unknown) {
+                onError?.(error, "Could not update the dose log");
+                return false;
+            } finally {
+                setActingKey(null);
+            }
+        },
+        [onChanged, onError]
+    );
+
     const toggleItem = React.useCallback(
         async (item: ChecklistItem) => {
             const {occurrence} = item;
             const done = occurrence.status === "done";
+            if (!done && isInjectableMedicationType(item.medication?.type)) {
+                // Ask for the approximate injection site before writing the log.
+                setSitePrompt(item);
+                return;
+            }
             setActingKey(occurrence.key);
             try {
                 if (done) {
@@ -286,6 +320,18 @@ export function ScheduleCalendar({
                     </p>
                 )}
             </section>
+
+            <InjectionSiteDialog
+                open={sitePrompt !== null}
+                onOpenChange={(open) => {
+                    if (!open) setSitePrompt(null);
+                }}
+                medicationName={sitePrompt?.medication?.name}
+                busy={busy || actingKey !== null}
+                onConfirm={(site) =>
+                    sitePrompt ? logItem(sitePrompt, site) : Promise.resolve(false)
+                }
+            />
         </div>
     );
 }

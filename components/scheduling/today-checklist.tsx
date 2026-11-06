@@ -13,7 +13,7 @@ import {Progress} from "@/components/ui/progress";
 import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue} from "@/components/ui/select";
 import type {Medication, Schedule} from "@/lib/db/types";
 import {useHydrated} from "@/lib/hooks/use-hydrated";
-import {medicationTypeMeta} from "@/lib/medications/constants";
+import {isInjectableMedicationType, medicationTypeMeta} from "@/lib/medications/constants";
 import {TIME_SLOTS, timeSlotFor, type TimeSlotMeta} from "@/lib/scheduling/constants";
 import {formatClockTime, formatDay} from "@/lib/scheduling/dates";
 import {prefilledDoseAmount} from "@/lib/scheduling/derived";
@@ -28,6 +28,7 @@ import {deleteDoseLog, logDose, logDoses} from "@/lib/scheduling/service";
 import {parseDecimalInput} from "@/lib/units";
 import {cn} from "@/lib/utils";
 
+import {InjectionSiteDialog} from "@/components/dose-logs/injection-site-dialog";
 import {DoseReadout} from "@/components/medications/dose-readout";
 import type {TrackerData} from "./use-tracker-data";
 
@@ -80,6 +81,8 @@ export function TodayChecklist({
     const hydrated = useHydrated();
     const [actingKey, setActingKey] = React.useState<string | null>(null);
     const [adHocOpen, setAdHocOpen] = React.useState(false);
+    /** Occurrence waiting for its injection site in the body-map dialog. */
+    const [sitePrompt, setSitePrompt] = React.useState<ChecklistItem | null>(null);
 
     const medications = React.useMemo(
         () => new Map(data.medications.map((m) => [m.id, m])),
@@ -138,10 +141,40 @@ export function TodayChecklist({
         }));
     }, [today]);
 
+    const logItem = React.useCallback(
+        async (item: ChecklistItem, injectionSite: string | undefined): Promise<boolean> => {
+            const {occurrence} = item;
+            setActingKey(occurrence.key);
+            try {
+                await logDose({
+                    medicationId: occurrence.medicationId,
+                    scheduleId: occurrence.scheduleId,
+                    doseAmount: occurrence.doseAmount,
+                    unit: occurrence.unit,
+                    scheduledFor: occurrence.scheduledFor,
+                    injectionSite,
+                });
+                onChanged();
+                return true;
+            } catch (error: unknown) {
+                onError?.(error, "Could not update the dose log");
+                return false;
+            } finally {
+                setActingKey(null);
+            }
+        },
+        [onChanged, onError]
+    );
+
     const toggleItem = React.useCallback(
         async (item: ChecklistItem) => {
             const {occurrence} = item;
             const done = occurrence.status === "done";
+            if (!done && isInjectableMedicationType(item.medication?.type)) {
+                // Ask for the approximate injection site before writing the log.
+                setSitePrompt(item);
+                return;
+            }
             setActingKey(occurrence.key);
             try {
                 if (done) {
@@ -308,6 +341,18 @@ export function TodayChecklist({
                 data={data}
                 busy={busy}
                 onLogged={onChanged}
+            />
+
+            <InjectionSiteDialog
+                open={sitePrompt !== null}
+                onOpenChange={(open) => {
+                    if (!open) setSitePrompt(null);
+                }}
+                medicationName={sitePrompt?.medication?.name}
+                busy={busy || actingKey !== null}
+                onConfirm={(site) =>
+                    sitePrompt ? logItem(sitePrompt, site) : Promise.resolve(false)
+                }
             />
         </Card>
     );
