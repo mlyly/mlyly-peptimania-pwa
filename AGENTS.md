@@ -134,10 +134,16 @@ interface Medication {
 > projections all derive from the same `scheduleFiresOnDay` rule.
 >
 > **Injection-site capture:** checking off a peptide/injection dose opens a body-map dialog
-> (`components/dose-logs/injection-site-dialog.tsx`). The selected approximate area — e.g.
-> "Left lower abdomen", "Right upper thigh", "Left buttock" — is stored verbatim in the existing
-> free-text `injectionSite` field. Non-injectable types log directly, and "Skip site" leaves the
-> field unset.
+> (`components/dose-logs/injection-site-dialog.tsx`). The abdomen offers a 4 × 2 grid of
+> approximate areas (each side's love handle and abdomen, upper/lower), alongside upper arms,
+> upper/lower thighs and buttocks. The chosen label — e.g. "Left lower abdomen", "Right upper thigh",
+> "Left buttock" — is stored verbatim in the existing free-text `injectionSite` field.
+> Non-injectable types log directly, and "Skip site" leaves the field unset. Mobile shows one
+> body side at a time behind a Front/Back switch; desktop shows both. Zones used by any dose in the
+> last 7 days are highlighted red (`recentInjectionSites()` in `lib/scheduling/derived.ts`), and a
+> legend explains the colour; selecting a zone still overrides the red with the emerald selection.
+> The same map is available as a picker from the one-off dose dialog and the dose-history
+> log/edit form (the latter via "Choose on body map", which fills the free-text site field).
 
 ```ts
 interface Schedule {

@@ -7,6 +7,7 @@ import type {MedicationType} from "@/lib/db/types";
 import {isInjectableMedicationType} from "@/lib/medications/constants";
 import {addDays, dateOnlyIso, formatMonthYear, isSameLocalDay, startOfLocalDay,} from "@/lib/scheduling/dates";
 import {matchingDoseLog, type Occurrence, rangeAgenda} from "@/lib/scheduling/occurrences";
+import {recentInjectionSites} from "@/lib/scheduling/derived";
 import {deleteDoseLog, logDose} from "@/lib/scheduling/service";
 import {cn} from "@/lib/utils";
 
@@ -65,6 +66,10 @@ export function ScheduleCalendar({
     const schedules = React.useMemo(
         () => new Map(data.schedules.map((s) => [s.id, s])),
         [data.schedules]
+    );
+    const recentSites = React.useMemo(
+        () => recentInjectionSites(data.doseLogs, now),
+        [data.doseLogs, now]
     );
     const [actingKey, setActingKey] = React.useState<string | null>(null);
     /** Occurrence waiting for its injection site in the body-map dialog. */
@@ -328,6 +333,7 @@ export function ScheduleCalendar({
                 }}
                 medicationName={sitePrompt?.medication?.name}
                 busy={busy || actingKey !== null}
+                recentSites={recentSites}
                 onConfirm={(site) =>
                     sitePrompt ? logItem(sitePrompt, site) : Promise.resolve(false)
                 }

@@ -29,17 +29,107 @@ type BodyView = "front" | "back";
 export const APPROXIMATE_INJECTION_SITES = [
     "Right upper arm",
     "Left upper arm",
+    "Right upper love handle",
     "Right upper abdomen",
     "Left upper abdomen",
+    "Left upper love handle",
+    "Right lower love handle",
     "Right lower abdomen",
     "Left lower abdomen",
+    "Left lower love handle",
     "Right upper thigh",
+    "Right lower thigh",
     "Left upper thigh",
+    "Left lower thigh",
     "Right buttock",
     "Left buttock",
 ] as const;
 
 export type ApproximateInjectionSite = (typeof APPROXIMATE_INJECTION_SITES)[number];
+
+/** Narrows a stored site string to one of the body-map labels. */
+export function isApproximateInjectionSite(value: string): value is ApproximateInjectionSite {
+    return (APPROXIMATE_INJECTION_SITES as readonly string[]).includes(value);
+}
+
+/**
+ * The abdomen's four columns, viewer-left to viewer-right on the front view:
+ * right love handle, right abdomen, left abdomen, left love handle. Each
+ * column has an upper and a lower zone.
+ */
+const ABDOMEN_COLUMNS = [
+    {x: 83, upper: "Right upper love handle", lower: "Right lower love handle"},
+    {x: 96, upper: "Right upper abdomen", lower: "Right lower abdomen"},
+    {x: 109, upper: "Left upper abdomen", lower: "Left lower abdomen"},
+    {x: 122, upper: "Left upper love handle", lower: "Left lower love handle"},
+] as const satisfies readonly {
+    x: number;
+    upper: ApproximateInjectionSite;
+    lower: ApproximateInjectionSite;
+}[];
+
+const EMPTY_RECENT_SITES: readonly string[] = [];
+
+type SiteRegion = "abdomen" | "arm" | "thigh" | "buttock";
+
+/**
+ * Whether a stored site string refers to a given map region. Exact labels
+ * match directly; older generic presets ("Abdomen", "Thigh", "Upper arm",
+ * "Left thigh", …) fan out to every matching map zone.
+ */
+function matchesInjectionSite(storedSite: string, label: ApproximateInjectionSite): boolean {
+    const stored = storedSite.trim().toLowerCase();
+    const zone = label.toLowerCase();
+    if (!stored) return false;
+    if (stored === zone) return true;
+
+    const storedRegion: SiteRegion | null =
+        stored.includes("love handle") ||
+        stored.includes("abdomen") ||
+        stored.includes("belly")
+            ? "abdomen"
+            : stored.includes("arm")
+                ? "arm"
+                : stored.includes("thigh")
+                    ? "thigh"
+                    : stored.includes("buttock") || stored.includes("glute")
+                        ? "buttock"
+                        : null;
+
+    const zoneRegion: SiteRegion | null =
+        zone.includes("love handle") || zone.includes("abdomen")
+            ? "abdomen"
+            : zone.includes("arm")
+                ? "arm"
+                : zone.includes("thigh")
+                    ? "thigh"
+                    : zone.includes("buttock")
+                        ? "buttock"
+                        : null;
+
+    if (!storedRegion || storedRegion !== zoneRegion) return false;
+
+    // "Love handle" is a flank, not the central abdomen strip.
+    if (stored.includes("love handle") && !zone.includes("love handle")) return false;
+
+    const storedSide = stored.includes("left")
+        ? "left"
+        : stored.includes("right")
+            ? "right"
+            : null;
+    if (storedSide && !zone.includes(storedSide)) return false;
+
+    if (zoneRegion !== "buttock") {
+        const storedLevel = stored.includes("upper")
+            ? "upper"
+            : stored.includes("lower")
+                ? "lower"
+                : null;
+        if (storedLevel && !zone.includes(storedLevel)) return false;
+    }
+
+    return true;
+}
 
 // ---------------------------------------------------------------------------
 // Body map
@@ -48,17 +138,18 @@ export type ApproximateInjectionSite = (typeof APPROXIMATE_INJECTION_SITES)[numb
 interface ZoneProps {
     label: ApproximateInjectionSite;
     selected: boolean;
+    usedRecently: boolean;
     onSelect: (label: ApproximateInjectionSite) => void;
     children: React.ReactNode;
 }
 
-function Zone({label, selected, onSelect, children}: ZoneProps) {
+function Zone({label, selected, usedRecently, onSelect, children}: ZoneProps) {
     const activate = () => onSelect(label);
     return (
         <g
             role="button"
             tabIndex={0}
-            aria-label={label}
+            aria-label={`${label}${usedRecently ? " — used in the last 7 days" : ""}`}
             aria-pressed={selected}
             onClick={activate}
             onKeyDown={(event) => {
@@ -71,7 +162,9 @@ function Zone({label, selected, onSelect, children}: ZoneProps) {
                 "cursor-pointer outline-none transition-colors",
                 selected
                     ? "fill-emerald-500/60 stroke-emerald-600"
-                    : "fill-emerald-500/10 stroke-emerald-500/40 hover:fill-emerald-500/25 hover:stroke-emerald-600 focus-visible:fill-emerald-500/30 focus-visible:stroke-emerald-600"
+                    : usedRecently
+                        ? "fill-red-500/40 stroke-red-500/70 hover:fill-red-500/55 focus-visible:fill-red-500/55 focus-visible:stroke-red-600"
+                        : "fill-emerald-500/10 stroke-emerald-500/40 hover:fill-emerald-500/25 hover:stroke-emerald-600 focus-visible:fill-emerald-500/30 focus-visible:stroke-emerald-600"
             )}
         >
             <title>{label}</title>
@@ -83,13 +176,16 @@ function Zone({label, selected, onSelect, children}: ZoneProps) {
 function BodyFigure({
                         view,
                         selected,
+                        recentLabels,
                         onSelect,
                     }: {
     view: BodyView;
     selected: ApproximateInjectionSite | null;
+    recentLabels: ReadonlySet<ApproximateInjectionSite>;
     onSelect: (label: ApproximateInjectionSite) => void;
 }) {
     const isSelected = (label: ApproximateInjectionSite) => selected === label;
+    const isRecent = (label: ApproximateInjectionSite) => recentLabels.has(label);
     // A front view mirrors the person (their right is on our left); a back
     // view does not (their right is on our right).
     const viewerLeftSide = view === "front" ? "Right" : "Left";
@@ -98,7 +194,7 @@ function BodyFigure({
     const viewerRightArm = view === "front" ? "Left upper arm" : "Right upper arm";
     return (
         <figure className="flex flex-col items-center gap-1.5">
-            <div className="flex w-full max-w-[180px] items-center gap-1">
+            <div className="flex w-full max-w-[220px] items-center gap-1 sm:max-w-[180px]">
                 <span
                     className="text-muted-foreground w-3 shrink-0 text-center text-[10px] font-semibold"
                     aria-hidden
@@ -141,6 +237,7 @@ function BodyFigure({
                     <Zone
                         label={viewerLeftArm}
                         selected={isSelected(viewerLeftArm)}
+                        usedRecently={isRecent(viewerLeftArm)}
                         onSelect={onSelect}
                     >
                         <ellipse
@@ -155,6 +252,7 @@ function BodyFigure({
                     <Zone
                         label={viewerRightArm}
                         selected={isSelected(viewerRightArm)}
+                        usedRecently={isRecent(viewerRightArm)}
                         onSelect={onSelect}
                     >
                         <ellipse
@@ -169,47 +267,71 @@ function BodyFigure({
 
                     {view === "front" ? (
                         <>
-                            <Zone
-                                label="Right upper abdomen"
-                                selected={isSelected("Right upper abdomen")}
-                                onSelect={onSelect}
-                            >
-                                <rect x={88} y={100} width={20} height={32} rx={8} strokeWidth={1.5}/>
-                            </Zone>
-                            <Zone
-                                label="Left upper abdomen"
-                                selected={isSelected("Left upper abdomen")}
-                                onSelect={onSelect}
-                            >
-                                <rect x={112} y={100} width={20} height={32} rx={8} strokeWidth={1.5}/>
-                            </Zone>
-                            <Zone
-                                label="Right lower abdomen"
-                                selected={isSelected("Right lower abdomen")}
-                                onSelect={onSelect}
-                            >
-                                <rect x={87} y={138} width={21} height={32} rx={8} strokeWidth={1.5}/>
-                            </Zone>
-                            <Zone
-                                label="Left lower abdomen"
-                                selected={isSelected("Left lower abdomen")}
-                                onSelect={onSelect}
-                            >
-                                <rect x={112} y={138} width={21} height={32} rx={8} strokeWidth={1.5}/>
-                            </Zone>
+                            {ABDOMEN_COLUMNS.map((column) => (
+                                <React.Fragment key={column.x}>
+                                    <Zone
+                                        label={column.upper}
+                                        selected={isSelected(column.upper)}
+                                        usedRecently={isRecent(column.upper)}
+                                        onSelect={onSelect}
+                                    >
+                                        <rect
+                                            x={column.x}
+                                            y={110}
+                                            width={12}
+                                            height={32}
+                                            rx={6}
+                                            strokeWidth={1.5}
+                                        />
+                                    </Zone>
+                                    <Zone
+                                        label={column.lower}
+                                        selected={isSelected(column.lower)}
+                                        usedRecently={isRecent(column.lower)}
+                                        onSelect={onSelect}
+                                    >
+                                        <rect
+                                            x={column.x}
+                                            y={144}
+                                            width={12}
+                                            height={32}
+                                            rx={6}
+                                            strokeWidth={1.5}
+                                        />
+                                    </Zone>
+                                </React.Fragment>
+                            ))}
                             <Zone
                                 label="Right upper thigh"
                                 selected={isSelected("Right upper thigh")}
+                                usedRecently={isRecent("Right upper thigh")}
                                 onSelect={onSelect}
                             >
-                                <rect x={84} y={202} width={24} height={44} rx={11} strokeWidth={1.5}/>
+                                <rect x={84} y={201} width={24} height={23} rx={10} strokeWidth={1.5}/>
                             </Zone>
                             <Zone
                                 label="Left upper thigh"
                                 selected={isSelected("Left upper thigh")}
+                                usedRecently={isRecent("Left upper thigh")}
                                 onSelect={onSelect}
                             >
-                                <rect x={112} y={202} width={24} height={44} rx={11} strokeWidth={1.5}/>
+                                <rect x={112} y={201} width={24} height={23} rx={10} strokeWidth={1.5}/>
+                            </Zone>
+                            <Zone
+                                label="Right lower thigh"
+                                selected={isSelected("Right lower thigh")}
+                                usedRecently={isRecent("Right lower thigh")}
+                                onSelect={onSelect}
+                            >
+                                <rect x={84} y={228} width={24} height={33} rx={10} strokeWidth={1.5}/>
+                            </Zone>
+                            <Zone
+                                label="Left lower thigh"
+                                selected={isSelected("Left lower thigh")}
+                                usedRecently={isRecent("Left lower thigh")}
+                                onSelect={onSelect}
+                            >
+                                <rect x={112} y={228} width={24} height={33} rx={10} strokeWidth={1.5}/>
                             </Zone>
                         </>
                     ) : (
@@ -217,6 +339,7 @@ function BodyFigure({
                             <Zone
                                 label="Left buttock"
                                 selected={isSelected("Left buttock")}
+                                usedRecently={isRecent("Left buttock")}
                                 onSelect={onSelect}
                             >
                                 <rect x={86} y={184} width={23} height={30} rx={11} strokeWidth={1.5}/>
@@ -224,6 +347,7 @@ function BodyFigure({
                             <Zone
                                 label="Right buttock"
                                 selected={isSelected("Right buttock")}
+                                usedRecently={isRecent("Right buttock")}
                                 onSelect={onSelect}
                             >
                                 <rect x={111} y={184} width={23} height={30} rx={11} strokeWidth={1.5}/>
@@ -252,10 +376,23 @@ function BodyFigure({
 export interface InjectionSiteDialogProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
+    /** Dialog heading. Defaults to "Where did you inject?". */
+    title?: string;
+    /** Label for the confirm button. Defaults to "Log dose". */
+    confirmLabel?: string;
+    /** Label for the skip button. Defaults to "Skip site". */
+    skipLabel?: string;
+    /** Site to pre-select when used as a picker. */
+    initialSite?: ApproximateInjectionSite | null;
     /** Name of the medication being logged (shown in the description). */
     medicationName?: string;
     /** Disables the controls while the surrounding checklist is writing. */
     busy?: boolean;
+    /**
+     * Injection sites recorded in the last week (all medications). Matching
+     * map regions are highlighted red so sites can be rotated.
+     */
+    recentSites?: readonly string[];
     /**
      * Persists the dose with the selected approximate site (`undefined` when
      * the user skips). Resolve `true` to close the dialog, `false` to keep it
@@ -274,8 +411,13 @@ export interface InjectionSiteDialogProps {
 export function InjectionSiteDialog({
                                         open,
                                         onOpenChange,
+                                        title = "Where did you inject?",
+                                        confirmLabel = "Log dose",
+                                        skipLabel = "Skip site",
+                                        initialSite = null,
                                         medicationName,
                                         busy = false,
+                                        recentSites = EMPTY_RECENT_SITES,
                                         onConfirm,
                                     }: InjectionSiteDialogProps) {
     return (
@@ -284,8 +426,13 @@ export function InjectionSiteDialog({
                 {/* State lives inside the content, which mounts fresh each time
                     the dialog opens — no reset effect needed. */}
                 <InjectionSiteDialogBody
+                    title={title}
+                    confirmLabel={confirmLabel}
+                    skipLabel={skipLabel}
+                    initialSite={initialSite}
                     medicationName={medicationName}
                     busy={busy}
+                    recentSites={recentSites}
                     onConfirm={onConfirm}
                     onClose={() => onOpenChange(false)}
                 />
@@ -295,19 +442,42 @@ export function InjectionSiteDialog({
 }
 
 function InjectionSiteDialogBody({
+                                     title,
+                                     confirmLabel,
+                                     skipLabel,
+                                     initialSite,
                                      medicationName,
                                      busy,
+                                     recentSites,
                                      onConfirm,
                                      onClose,
                                  }: {
+    title: string;
+    confirmLabel: string;
+    skipLabel: string;
+    initialSite: ApproximateInjectionSite | null;
     medicationName?: string;
     busy: boolean;
+    recentSites: readonly string[];
     onConfirm: (site: string | undefined) => Promise<boolean>;
     onClose: () => void;
 }) {
-    const [selected, setSelected] = React.useState<ApproximateInjectionSite | null>(null);
+    const [selected, setSelected] = React.useState<ApproximateInjectionSite | null>(initialSite);
+    const [activeView, setActiveView] = React.useState<BodyView>("front");
     const [saving, setSaving] = React.useState(false);
     const [error, setError] = React.useState<string | null>(null);
+
+    // Map stored site strings (including older generic presets) onto the
+    // zones this body map knows about.
+    const recentZoneLabels = React.useMemo(() => {
+        const labels = new Set<ApproximateInjectionSite>();
+        for (const site of recentSites) {
+            for (const label of APPROXIMATE_INJECTION_SITES) {
+                if (matchesInjectionSite(site, label)) labels.add(label);
+            }
+        }
+        return labels;
+    }, [recentSites]);
 
     const toggleSite = (label: ApproximateInjectionSite) => {
         setSelected((current) => (current === label ? null : label));
@@ -336,7 +506,7 @@ function InjectionSiteDialogBody({
     return (
         <>
             <DialogHeader>
-                <DialogTitle>Where did you inject?</DialogTitle>
+                <DialogTitle>{title}</DialogTitle>
                 <DialogDescription>
                     {medicationName
                         ? `Choose the closest area for ${medicationName}. `
@@ -346,13 +516,60 @@ function InjectionSiteDialogBody({
             </DialogHeader>
 
             <div className="flex flex-col gap-3">
-                <div className="grid grid-cols-2 gap-3">
-                    <BodyFigure view="front" selected={selected} onSelect={toggleSite}/>
-                    <BodyFigure view="back" selected={selected} onSelect={toggleSite}/>
+                {/* Mobile shows one body side at a time; desktop shows both. */}
+                <div className="bg-muted grid grid-cols-2 gap-1 rounded-lg p-1 sm:hidden">
+                    <Button
+                        type="button"
+                        size="sm"
+                        variant={activeView === "front" ? "secondary" : "ghost"}
+                        className="h-8"
+                        onClick={() => setActiveView("front")}
+                        aria-pressed={activeView === "front"}
+                    >
+                        Front
+                    </Button>
+                    <Button
+                        type="button"
+                        size="sm"
+                        variant={activeView === "back" ? "secondary" : "ghost"}
+                        className="h-8"
+                        onClick={() => setActiveView("back")}
+                        aria-pressed={activeView === "back"}
+                    >
+                        Back
+                    </Button>
                 </div>
-                <p className="text-muted-foreground text-center text-[11px]">
-                    R / L mark the person’s right and left sides.
-                </p>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <div className={cn(activeView !== "front" && "hidden sm:block")}>
+                        <BodyFigure
+                            view="front"
+                            selected={selected}
+                            recentLabels={recentZoneLabels}
+                            onSelect={toggleSite}
+                        />
+                    </div>
+                    <div className={cn(activeView !== "back" && "hidden sm:block")}>
+                        <BodyFigure
+                            view="back"
+                            selected={selected}
+                            recentLabels={recentZoneLabels}
+                            onSelect={toggleSite}
+                        />
+                    </div>
+                </div>
+                <div
+                    className="text-muted-foreground flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-center text-[11px]">
+                    <span>R / L mark the person’s right and left sides.</span>
+                    {recentZoneLabels.size > 0 && (
+                        <span className="inline-flex items-center gap-1">
+                            <span
+                                className="border-red-500/70 bg-red-500/40 inline-block size-2.5 rounded-sm border"
+                                aria-hidden
+                            />
+                            Used in the last 7 days
+                        </span>
+                    )}
+                </div>
 
                 <div
                     className="bg-muted/40 flex min-h-10 items-center gap-2 rounded-lg border px-3 py-2 text-sm"
@@ -379,7 +596,7 @@ function InjectionSiteDialogBody({
                     onClick={() => void submit(undefined)}
                     disabled={disabled}
                 >
-                    Skip site
+                    {skipLabel}
                 </Button>
                 <div className="flex flex-col-reverse gap-2 sm:flex-row">
                     <Button
@@ -395,7 +612,7 @@ function InjectionSiteDialogBody({
                         onClick={() => void submit(selected ?? undefined)}
                         disabled={disabled || selected === null}
                     >
-                        {saving ? "Logging…" : "Log dose"}
+                        {saving ? "Logging…" : confirmLabel}
                     </Button>
                 </div>
             </DialogFooter>

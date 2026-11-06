@@ -7,6 +7,7 @@ import {AlertCircle, ClipboardList, Plus, Search, SearchX,} from "lucide-react";
 import type {DoseLog} from "@/lib/db/types";
 import {storageAwareMessage} from "@/lib/db/quota";
 import {deleteDoseLog} from "@/lib/scheduling/service";
+import {recentInjectionSites} from "@/lib/scheduling/derived";
 import {toast} from "@/lib/toast";
 
 import {ConfirmDialog} from "@/components/app/confirm-dialog";
@@ -67,6 +68,11 @@ export function DoseLogsManager() {
     const onChanged = React.useCallback(() => {
         void reload();
     }, [reload]);
+
+    const recentSites = React.useMemo(
+        () => recentInjectionSites(data.doseLogs),
+        [data.doseLogs]
+    );
 
     const openCreate = React.useCallback(() => {
         setEditing(null);
@@ -307,6 +313,7 @@ export function DoseLogsManager() {
                 log={editing}
                 medications={data.medications}
                 schedules={data.schedules}
+                recentSites={recentSites}
                 onSaved={handleDoseSaved}
             />
 

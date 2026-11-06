@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import {AlarmClock, CalendarPlus, Check, CheckCheck, Plus, Repeat, Undo2,} from "lucide-react";
+import {AlarmClock, CalendarPlus, Check, CheckCheck, MapPin, Plus, Repeat, Undo2,} from "lucide-react";
 
 import {Button} from "@/components/ui/button";
 import {Card, CardContent, CardHeader, CardTitle} from "@/components/ui/card";
@@ -16,7 +16,7 @@ import {useHydrated} from "@/lib/hooks/use-hydrated";
 import {isInjectableMedicationType, medicationTypeMeta} from "@/lib/medications/constants";
 import {TIME_SLOTS, timeSlotFor, type TimeSlotMeta} from "@/lib/scheduling/constants";
 import {formatClockTime, formatDay} from "@/lib/scheduling/dates";
-import {prefilledDoseAmount} from "@/lib/scheduling/derived";
+import {prefilledDoseAmount, recentInjectionSites} from "@/lib/scheduling/derived";
 import {
     cyclePhaseStatus,
     dayOccurrences,
@@ -28,7 +28,7 @@ import {deleteDoseLog, logDose, logDoses} from "@/lib/scheduling/service";
 import {parseDecimalInput} from "@/lib/units";
 import {cn} from "@/lib/utils";
 
-import {InjectionSiteDialog} from "@/components/dose-logs/injection-site-dialog";
+import {InjectionSiteDialog, isApproximateInjectionSite} from "@/components/dose-logs/injection-site-dialog";
 import {DoseReadout} from "@/components/medications/dose-readout";
 import type {TrackerData} from "./use-tracker-data";
 
@@ -44,6 +44,16 @@ export interface ChecklistItem {
      */
     canUndo: boolean;
 }
+
+interface MissedItem {
+    occurrence: WithStatus<Occurrence>;
+    medication: Medication | null;
+}
+
+/** Which pending action is waiting for an injection site. */
+type SitePrompt =
+    | { kind: "occurrence"; item: ChecklistItem }
+    | { kind: "missed"; item: MissedItem };
 
 export interface TodayChecklistProps {
     data: TrackerData;
@@ -82,7 +92,7 @@ export function TodayChecklist({
     const [actingKey, setActingKey] = React.useState<string | null>(null);
     const [adHocOpen, setAdHocOpen] = React.useState(false);
     /** Occurrence waiting for its injection site in the body-map dialog. */
-    const [sitePrompt, setSitePrompt] = React.useState<ChecklistItem | null>(null);
+    const [sitePrompt, setSitePrompt] = React.useState<SitePrompt | null>(null);
 
     const medications = React.useMemo(
         () => new Map(data.medications.map((m) => [m.id, m])),
@@ -91,6 +101,10 @@ export function TodayChecklist({
     const schedules = React.useMemo(
         () => new Map(data.schedules.map((s) => [s.id, s])),
         [data.schedules]
+    );
+    const recentSites = React.useMemo(
+        () => recentInjectionSites(data.doseLogs, now),
+        [data.doseLogs, now]
     );
 
     const today = React.useMemo(() => {
@@ -172,7 +186,7 @@ export function TodayChecklist({
             const done = occurrence.status === "done";
             if (!done && isInjectableMedicationType(item.medication?.type)) {
                 // Ask for the approximate injection site before writing the log.
-                setSitePrompt(item);
+                setSitePrompt({kind: "occurrence", item});
                 return;
             }
             setActingKey(occurrence.key);
@@ -223,7 +237,7 @@ export function TodayChecklist({
     }, [today, onChanged, onError]);
 
     const logMissed = React.useCallback(
-        async (item: { occurrence: WithStatus<Occurrence>; medication: Medication | null }) => {
+        async (item: MissedItem, injectionSite?: string): Promise<boolean> => {
             setActingKey(item.occurrence.key);
             try {
                 await logDose({
@@ -232,16 +246,30 @@ export function TodayChecklist({
                     doseAmount: item.occurrence.doseAmount,
                     unit: item.occurrence.unit,
                     scheduledFor: item.occurrence.scheduledFor,
+                    injectionSite,
                     notes: "Make-up dose",
                 });
                 onChanged();
+                return true;
             } catch (error: unknown) {
                 onError?.(error, "Could not log the make-up dose");
+                return false;
             } finally {
                 setActingKey(null);
             }
         },
         [onChanged, onError]
+    );
+
+    const requestLogMissed = React.useCallback(
+        (item: MissedItem) => {
+            if (isInjectableMedicationType(item.medication?.type)) {
+                setSitePrompt({kind: "missed", item});
+                return;
+            }
+            void logMissed(item);
+        },
+        [logMissed]
     );
 
     const pendingCount = today.length - doneCount;
@@ -325,7 +353,7 @@ export function TodayChecklist({
                                             key={item.occurrence.key}
                                             item={item}
                                             busy={busy || actingKey === item.occurrence.key}
-                                            onLog={() => void logMissed(item)}
+                                            onLog={() => requestLogMissed(item)}
                                         />
                                     ))}
                                 </ul>
@@ -340,6 +368,7 @@ export function TodayChecklist({
                 onOpenChange={setAdHocOpen}
                 data={data}
                 busy={busy}
+                recentSites={recentSites}
                 onLogged={onChanged}
             />
 
@@ -348,11 +377,15 @@ export function TodayChecklist({
                 onOpenChange={(open) => {
                     if (!open) setSitePrompt(null);
                 }}
-                medicationName={sitePrompt?.medication?.name}
+                medicationName={sitePrompt?.item.medication?.name}
                 busy={busy || actingKey !== null}
-                onConfirm={(site) =>
-                    sitePrompt ? logItem(sitePrompt, site) : Promise.resolve(false)
-                }
+                recentSites={recentSites}
+                onConfirm={(site) => {
+                    if (!sitePrompt) return Promise.resolve(false);
+                    return sitePrompt.kind === "occurrence"
+                        ? logItem(sitePrompt.item, site)
+                        : logMissed(sitePrompt.item, site);
+                }}
             />
         </Card>
     );
@@ -587,6 +620,7 @@ interface AdHocDoseDialogProps {
     onOpenChange: (open: boolean) => void;
     data: TrackerData;
     busy: boolean;
+    recentSites: readonly string[];
     onLogged: () => void;
 }
 
@@ -598,6 +632,7 @@ function localTimeNow(): string {
 interface AdHocDoseFormProps {
     data: TrackerData;
     busy: boolean;
+    recentSites: readonly string[];
     onLogged: () => void;
     onOpenChange: (open: boolean) => void;
 }
@@ -607,7 +642,7 @@ interface AdHocDoseFormProps {
  * so field defaults (first medication, its schedule dose, current time) are
  * computed at mount instead of through seeding effects.
  */
-function AdHocDoseForm({data, busy, onLogged, onOpenChange}: AdHocDoseFormProps) {
+function AdHocDoseForm({data, busy, recentSites, onLogged, onOpenChange}: AdHocDoseFormProps) {
     const first = data.medications[0];
     const [medicationId, setMedicationId] = React.useState(first?.id ?? "");
     const [amount, setAmount] = React.useState(() =>
@@ -615,14 +650,18 @@ function AdHocDoseForm({data, busy, onLogged, onOpenChange}: AdHocDoseFormProps)
     );
     const [time, setTime] = React.useState(localTimeNow());
     const [notes, setNotes] = React.useState("");
+    const [site, setSite] = React.useState<string | undefined>(undefined);
+    const [siteOpen, setSiteOpen] = React.useState(false);
     const [error, setError] = React.useState<string | null>(null);
 
     const selected = data.medications.find((m) => m.id === medicationId);
+    const injectable = isInjectableMedicationType(selected?.type);
 
     const selectMedication = (id: string) => {
         setMedicationId(id);
         const medication = data.medications.find((m) => m.id === id);
         setAmount(String(prefilledDoseAmount(medication, data.schedules)));
+        setSite(undefined);
     };
 
     const submit = async () => {
@@ -649,6 +688,7 @@ function AdHocDoseForm({data, busy, onLogged, onOpenChange}: AdHocDoseFormProps)
                 doseAmount,
                 unit: selected.unit,
                 timestamp: timestamp.toISOString(),
+                injectionSite: injectable ? site : undefined,
                 notes: notes.trim() || undefined,
             });
             onLogged();
@@ -717,6 +757,24 @@ function AdHocDoseForm({data, busy, onLogged, onOpenChange}: AdHocDoseFormProps)
                         />
                     </label>
                 </div>
+                {injectable && (
+                    <div className="flex flex-col gap-1.5 text-sm">
+                        <span className="font-medium">
+                            Injection site{" "}
+                            <span className="text-muted-foreground">(optional)</span>
+                        </span>
+                        <Button
+                            type="button"
+                            variant="outline"
+                            className="justify-start"
+                            onClick={() => setSiteOpen(true)}
+                            disabled={busy}
+                        >
+                            <MapPin className="size-4" aria-hidden/>
+                            {site ?? "Choose on body map"}
+                        </Button>
+                    </div>
+                )}
             </div>
 
             {error && (
@@ -724,6 +782,20 @@ function AdHocDoseForm({data, busy, onLogged, onOpenChange}: AdHocDoseFormProps)
                     {error}
                 </p>
             )}
+
+            <InjectionSiteDialog
+                open={siteOpen}
+                onOpenChange={setSiteOpen}
+                title="Injection site"
+                confirmLabel="Use site"
+                skipLabel="No site"
+                initialSite={site && isApproximateInjectionSite(site) ? site : null}
+                recentSites={recentSites}
+                onConfirm={async (picked) => {
+                    setSite(picked);
+                    return true;
+                }}
+            />
 
             <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                 <Button
@@ -745,7 +817,7 @@ function AdHocDoseForm({data, busy, onLogged, onOpenChange}: AdHocDoseFormProps)
     );
 }
 
-function AdHocDoseDialog({open, onOpenChange, data, busy, onLogged}: AdHocDoseDialogProps) {
+function AdHocDoseDialog({open, onOpenChange, data, busy, recentSites, onLogged}: AdHocDoseDialogProps) {
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent className="sm:max-w-md">
@@ -764,6 +836,7 @@ function AdHocDoseDialog({open, onOpenChange, data, busy, onLogged}: AdHocDoseDi
                         key="ad-hoc-dose-form"
                         data={data}
                         busy={busy}
+                        recentSites={recentSites}
                         onLogged={onLogged}
                         onOpenChange={onOpenChange}
                     />

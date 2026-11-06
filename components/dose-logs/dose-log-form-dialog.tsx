@@ -3,10 +3,10 @@
 import * as React from "react";
 import {useForm, useWatch} from "react-hook-form";
 import {zodResolver} from "@hookform/resolvers/zod";
-import {TriangleAlert} from "lucide-react";
+import {MapPin, TriangleAlert} from "lucide-react";
 
 import type {DoseLog, Medication, Schedule} from "@/lib/db/types";
-import {DOSE_UNITS, doseUnitLabel, medicationTypeMeta} from "@/lib/medications/constants";
+import {DOSE_UNITS, doseUnitLabel, isInjectableMedicationType, medicationTypeMeta,} from "@/lib/medications/constants";
 import {CUSTOM_SITE, INJECTION_SITES, UNSPECIFIED_SITE} from "@/lib/scheduling/constants";
 import {doseLogFormSchema, type DoseLogFormValues, doseLogToFormValues, toDoseLogInput,} from "@/lib/scheduling/schema";
 import {logDose, updateDoseLog} from "@/lib/scheduling/service";
@@ -18,6 +18,8 @@ import {Input} from "@/components/ui/input";
 import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue} from "@/components/ui/select";
 import {Separator} from "@/components/ui/separator";
 import {Textarea} from "@/components/ui/textarea";
+
+import {InjectionSiteDialog, isApproximateInjectionSite} from "./injection-site-dialog";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -35,13 +37,15 @@ interface DoseLogFormProps {
     log: DoseLog | null;
     medications: Medication[];
     schedules: Schedule[];
+    recentSites: readonly string[];
     onSaved: (log: DoseLog, mode: "created" | "updated") => void;
     onCancel: () => void;
 }
 
-function DoseLogForm({log, medications, schedules, onSaved, onCancel}: DoseLogFormProps) {
+function DoseLogForm({log, medications, schedules, recentSites, onSaved, onCancel}: DoseLogFormProps) {
     const [saving, setSaving] = React.useState(false);
     const [error, setError] = React.useState<string | null>(null);
+    const [sitePickerOpen, setSitePickerOpen] = React.useState(false);
 
     const form = useForm<DoseLogFormValues>({
         resolver: zodResolver(doseLogFormSchema),
@@ -50,10 +54,16 @@ function DoseLogForm({log, medications, schedules, onSaved, onCancel}: DoseLogFo
 
     const watched = useWatch({control: form.control});
     const siteSelection = watched.siteSelection ?? UNSPECIFIED_SITE;
+    const siteDetail = watched.siteDetail ?? "";
     const selectedMedication = React.useMemo(
         () => medications.find((medication) => medication.id === (watched.medicationId ?? "")) ?? null,
         [medications, watched.medicationId]
     );
+    const injectable = isInjectableMedicationType(selectedMedication?.type);
+    const initialSite =
+        siteSelection === CUSTOM_SITE && isApproximateInjectionSite(siteDetail)
+            ? siteDetail
+            : null;
 
     const submit = async (values: DoseLogFormValues) => {
         setSaving(true);
@@ -228,6 +238,19 @@ function DoseLogForm({log, medications, schedules, onSaved, onCancel}: DoseLogFo
                             <FormDescription>
                                 Optional — leave “Not recorded” for oral or other non-injected doses.
                             </FormDescription>
+                            {injectable && (
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    className="mt-1 self-start"
+                                    onClick={() => setSitePickerOpen(true)}
+                                    disabled={saving}
+                                >
+                                    <MapPin className="size-4" aria-hidden/>
+                                    Choose on body map
+                                </Button>
+                            )}
                             <FormMessage/>
                         </FormItem>
                     )}
@@ -295,6 +318,29 @@ function DoseLogForm({log, medications, schedules, onSaved, onCancel}: DoseLogFo
                     </Button>
                 </div>
             </form>
+
+            <InjectionSiteDialog
+                open={sitePickerOpen}
+                onOpenChange={setSitePickerOpen}
+                title="Injection site"
+                confirmLabel="Use site"
+                skipLabel="No site"
+                initialSite={initialSite}
+                medicationName={selectedMedication?.name}
+                recentSites={recentSites}
+                onConfirm={async (picked) => {
+                    form.setValue(
+                        "siteSelection",
+                        picked ? CUSTOM_SITE : UNSPECIFIED_SITE,
+                        {shouldDirty: true, shouldValidate: true}
+                    );
+                    form.setValue("siteDetail", picked ?? "", {
+                        shouldDirty: true,
+                        shouldValidate: true,
+                    });
+                    return true;
+                }}
+            />
         </Form>
     );
 }
@@ -310,6 +356,8 @@ export interface DoseLogFormDialogProps {
     log: DoseLog | null;
     medications: Medication[];
     schedules: Schedule[];
+    /** Injection sites used in the last week (all medications). */
+    recentSites?: readonly string[];
     onSaved: (log: DoseLog, mode: "created" | "updated") => void;
 }
 
@@ -319,6 +367,7 @@ export function DoseLogFormDialog({
                                       log,
                                       medications,
                                       schedules,
+                                      recentSites = [],
                                       onSaved,
                                   }: DoseLogFormDialogProps) {
     const handleSaved = React.useCallback(
@@ -349,6 +398,7 @@ export function DoseLogFormDialog({
                         log={log}
                         medications={medications}
                         schedules={schedules}
+                        recentSites={recentSites}
                         onSaved={handleSaved}
                         onCancel={() => onOpenChange(false)}
                     />
