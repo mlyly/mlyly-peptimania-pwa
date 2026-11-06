@@ -60,6 +60,10 @@ export function ScheduleCalendar({
         () => new Map(data.medications.map((m) => [m.id, m])),
         [data.medications]
     );
+    const schedules = React.useMemo(
+        () => new Map(data.schedules.map((s) => [s.id, s])),
+        [data.schedules]
+    );
     const [actingKey, setActingKey] = React.useState<string | null>(null);
 
     const viewYear = selectedDate.getFullYear();
@@ -99,10 +103,11 @@ export function ScheduleCalendar({
                 return {
                     occurrence: {...occurrence, status: matched ? "done" : occurrence.status},
                     medication: medications.get(occurrence.medicationId) ?? null,
+                    schedule: schedules.get(occurrence.scheduleId) ?? null,
                     canUndo: matched?.scheduledFor === occurrence.scheduledFor,
                 };
             }),
-        [selectedOccurrences, data.doseLogs, medications]
+        [selectedOccurrences, data.doseLogs, medications, schedules]
     );
 
     const toggleItem = React.useCallback(

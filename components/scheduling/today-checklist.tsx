@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import {AlarmClock, CalendarPlus, Check, CheckCheck, Plus, Undo2,} from "lucide-react";
+import {AlarmClock, CalendarPlus, Check, CheckCheck, Plus, Repeat, Undo2,} from "lucide-react";
 
 import {Button} from "@/components/ui/button";
 import {Card, CardContent, CardHeader, CardTitle} from "@/components/ui/card";
@@ -11,13 +11,19 @@ import {Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle} fro
 import {Input} from "@/components/ui/input";
 import {Progress} from "@/components/ui/progress";
 import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue} from "@/components/ui/select";
-import type {Medication} from "@/lib/db/types";
+import type {Medication, Schedule} from "@/lib/db/types";
 import {useHydrated} from "@/lib/hooks/use-hydrated";
 import {medicationTypeMeta} from "@/lib/medications/constants";
 import {TIME_SLOTS, timeSlotFor, type TimeSlotMeta} from "@/lib/scheduling/constants";
 import {formatClockTime, formatDay} from "@/lib/scheduling/dates";
 import {prefilledDoseAmount} from "@/lib/scheduling/derived";
-import {dayOccurrences, matchingDoseLog, missedOccurrences, type Occurrence,} from "@/lib/scheduling/occurrences";
+import {
+    cyclePhaseStatus,
+    dayOccurrences,
+    matchingDoseLog,
+    missedOccurrences,
+    type Occurrence,
+} from "@/lib/scheduling/occurrences";
 import {deleteDoseLog, logDose, logDoses} from "@/lib/scheduling/service";
 import {parseDecimalInput} from "@/lib/units";
 import {cn} from "@/lib/utils";
@@ -28,6 +34,8 @@ import type {TrackerData} from "./use-tracker-data";
 export interface ChecklistItem {
     occurrence: Occurrence & { status: "upcoming" | "due" | "overdue" | "done" };
     medication: Medication | null;
+    /** Source schedule — used to surface on/off cycle context. */
+    schedule: Schedule | null;
     /**
      * True when the completing log carries `scheduledFor` (created from this
      * checklist) and can be removed again; manually-logged doses can't be
@@ -77,6 +85,10 @@ export function TodayChecklist({
         () => new Map(data.medications.map((m) => [m.id, m])),
         [data.medications]
     );
+    const schedules = React.useMemo(
+        () => new Map(data.schedules.map((s) => [s.id, s])),
+        [data.schedules]
+    );
 
     const today = React.useMemo(() => {
         const occurrences = dayOccurrences(data.schedules, data.doseLogs, now, now);
@@ -88,10 +100,11 @@ export function TodayChecklist({
                     status: matched ? "done" : occurrence.status,
                 },
                 medication: medications.get(occurrence.medicationId) ?? null,
+                schedule: schedules.get(occurrence.scheduleId) ?? null,
                 canUndo: matched?.scheduledFor === occurrence.scheduledFor,
             } satisfies ChecklistItem;
         });
-    }, [data.schedules, data.doseLogs, medications, now]);
+    }, [data.schedules, data.doseLogs, medications, schedules, now]);
 
     const missed = React.useMemo(
         () =>
@@ -333,10 +346,11 @@ export function ChecklistRow({
                                  busy,
                                  onToggle,
                              }: ChecklistRowProps) {
-    const {occurrence, medication} = item;
+    const {occurrence, medication, schedule} = item;
     const status = occurrence.status;
     const done = status === "done";
     const meta = medication ? medicationTypeMeta(medication.type) : null;
+    const cycle = schedule ? cyclePhaseStatus(schedule, occurrence.date) : null;
 
     return (
         <li
@@ -371,6 +385,31 @@ export function ChecklistRow({
                         {STATUS_LINE[status].label}
                     </span>
                 </div>
+                {cycle && (
+                    <p className="text-muted-foreground mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] tabular-nums">
+                        <Repeat className="size-3 shrink-0" aria-hidden/>
+                        <span
+                            className={cn(
+                                "font-medium",
+                                cycle.phase === "on"
+                                    ? "text-emerald-600 dark:text-emerald-400"
+                                    : "text-sky-600 dark:text-sky-400"
+                            )}
+                        >
+                            {cycle.phase === "on" ? "On" : "Off"} day {cycle.dayNumber} of{" "}
+                            {cycle.runLength}
+                        </span>
+                        <span aria-hidden>·</span>
+                        <span>
+                            {cycle.daysLeft} {cycle.daysLeft === 1 ? "day" : "days"} left
+                        </span>
+                        <span aria-hidden>·</span>
+                        <span>
+                            {cycle.nextPhase === "on" ? "On" : "Off"} starts{" "}
+                            {formatDay(cycle.nextPhaseStart)}
+                        </span>
+                    </p>
+                )}
             </div>
             {meta && (
                 <span
