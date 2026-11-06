@@ -1,13 +1,13 @@
 "use client";
 
 import * as React from "react";
-import {CalendarClock, MoreHorizontal, Pencil, Trash2,} from "lucide-react";
+import {CalendarClock, MoreHorizontal, Pencil, Repeat, Trash2,} from "lucide-react";
 
 import type {Medication, Schedule} from "@/lib/db/types";
 import {medicationTypeMeta} from "@/lib/medications/constants";
 import {timeSlotFor} from "@/lib/scheduling/constants";
 import {formatRelativeDay} from "@/lib/scheduling/dates";
-import {nextOccurrence, occurrenceScheduleSummary,} from "@/lib/scheduling/occurrences";
+import {cyclePhaseLabel, nextOccurrence, occurrenceScheduleSummary,} from "@/lib/scheduling/occurrences";
 import {cn} from "@/lib/utils";
 
 import {DoseReadout} from "@/components/medications/dose-readout";
@@ -40,6 +40,7 @@ export function ScheduleRow({
     const meta = medication ? medicationTypeMeta(medication.type) : null;
     const slot = timeSlotFor(schedule.timeOfDay);
     const next = React.useMemo(() => nextOccurrence(schedule), [schedule]);
+    const cycleLabel = React.useMemo(() => cyclePhaseLabel(schedule), [schedule]);
     const paused = !schedule.active;
 
     return (
@@ -80,6 +81,12 @@ export function ScheduleRow({
                                 <span className="text-muted-foreground inline-flex items-center gap-1 text-xs">
                                     <CalendarClock className="size-3 shrink-0" aria-hidden/>
                                     next {formatRelativeDay(next)}
+                                </span>
+                            )}
+                            {cycleLabel && (
+                                <span className="text-muted-foreground inline-flex items-center gap-1 text-xs">
+                                    <Repeat className="size-3 shrink-0" aria-hidden/>
+                                    {cycleLabel}
                                 </span>
                             )}
                             {paused && (

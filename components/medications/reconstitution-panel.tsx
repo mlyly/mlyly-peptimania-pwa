@@ -1,10 +1,11 @@
 "use client";
 
 import * as React from "react";
-import {CalendarClock, FlaskConical, TriangleAlert} from "lucide-react";
+import {CalendarClock, FlaskConical, Repeat, TriangleAlert} from "lucide-react";
 
 import type {DoseUnit, Medication, Schedule} from "@/lib/db/types";
 import {concentrationLabel, dosesPerVial, scheduleFrequencyLabel,} from "@/lib/medications/derived";
+import {cyclePhaseLabel} from "@/lib/scheduling/occurrences";
 import {formatAmount, formatNumber, IU_FALLBACK_WARNING} from "@/lib/units";
 import {cn} from "@/lib/utils";
 
@@ -103,22 +104,31 @@ export function ScheduleVolumeList({
     if (schedules.length === 0) return null;
     return (
         <div className={cn("flex flex-col gap-1.5", className)}>
-            {schedules.map((schedule) => (
-                <div
-                    key={schedule.id}
-                    className="text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-1 text-xs"
-                >
-                    <DoseReadout
-                        amount={schedule.doseAmount}
-                        unit={schedule.unit}
-                        medication={medication}
-                        variant="syringe"
-                    />
-                    <span className="min-w-0 truncate">
-                        {scheduleFrequencyLabel(schedule)} · {schedule.timeOfDay}
-                    </span>
-                </div>
-            ))}
+            {schedules.map((schedule) => {
+                const cycleLabel = cyclePhaseLabel(schedule);
+                return (
+                    <div
+                        key={schedule.id}
+                        className="text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-1 text-xs"
+                    >
+                        <DoseReadout
+                            amount={schedule.doseAmount}
+                            unit={schedule.unit}
+                            medication={medication}
+                            variant="syringe"
+                        />
+                        <span className="min-w-0 truncate">
+                            {scheduleFrequencyLabel(schedule)} · {schedule.timeOfDay}
+                        </span>
+                        {cycleLabel && (
+                            <span className="inline-flex items-center gap-1 text-[11px]">
+                                <Repeat className="size-3 shrink-0" aria-hidden/>
+                                {cycleLabel}
+                            </span>
+                        )}
+                    </div>
+                );
+            })}
         </div>
     );
 }

@@ -48,6 +48,8 @@ import {
 } from "../lib/scheduling/dates";
 import {
     completionSummary,
+    cyclePhaseLabel,
+    cyclePhaseStatus,
     dayAgenda,
     dayOccurrences,
     expandSchedule,
@@ -564,6 +566,45 @@ async function main() {
         scheduleCadenceLabel(cycle) === "5 days on · 2 days off" &&
         scheduleCadenceLabel({...cycle, daysOn: 1, daysOff: 1}) === "1 day on · 1 day off",
         scheduleCadenceLabel(cycle)
+    );
+
+    // Cycle phase: 5-on/2-off from Mon 5 Jan; NOW (Thu 15 Jan) is the 4th on-day.
+    const onPhase = cyclePhaseStatus(cycle, NOW);
+    check(
+        "cycle phase status reports the current on-run and days left",
+        onPhase?.phase === "on" &&
+        onPhase.dayNumber === 4 &&
+        onPhase.runLength === 5 &&
+        onPhase.daysLeft === 2 &&
+        onPhase.nextPhase === "off" &&
+        onPhase.nextPhaseStart.getDate() === 17,
+        onPhase ? JSON.stringify(onPhase) : "null"
+    );
+    const offPhase = cyclePhaseStatus(cycle, d(2026, 1, 17, 8));
+    check(
+        "cycle phase status reports the current off-run and next on start",
+        offPhase?.phase === "off" &&
+        offPhase.dayNumber === 1 &&
+        offPhase.runLength === 2 &&
+        offPhase.daysLeft === 2 &&
+        offPhase.nextPhase === "on" &&
+        offPhase.nextPhaseStart.getDate() === 19,
+        offPhase ? JSON.stringify(offPhase) : "null"
+    );
+    check(
+        "cycle phase status is null before the start date, for non-cycles and malformed cycles",
+        cyclePhaseStatus(cycle, d(2026, 1, 4)) === null &&
+        cyclePhaseStatus(dailyEarly, NOW) === null &&
+        cyclePhaseStatus({...cycle, daysOff: 0}, NOW) === null
+    );
+    const onPhaseLabel = cyclePhaseLabel(cycle, NOW);
+    check(
+        "cycle phase label joins day, next-start date and days left",
+        onPhaseLabel !== null &&
+        onPhaseLabel.includes("On day 4 of 5") &&
+        onPhaseLabel.includes("Off starts") &&
+        onPhaseLabel.includes("2 days left"),
+        onPhaseLabel ?? "null"
     );
     check(
         "summary line joins cadence and clock time",

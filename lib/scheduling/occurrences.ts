@@ -13,8 +13,10 @@ import {
     dateOnlyIso,
     daysBetween,
     diffDays,
+    formatDay,
     isSameLocalDay,
     localDateFromIso,
+    startOfLocalDay,
     weekdayOf,
 } from "./dates";
 import {WEEKDAY_LABELS} from "./constants";
@@ -332,6 +334,78 @@ export function scheduleCadenceLabel(schedule: Schedule): string {
                 `${schedule.daysOff} ${schedule.daysOff === 1 ? "day" : "days"} off`
                 : "Days on/off";
     }
+}
+
+/** Current position inside an on/off (`cycle`) schedule. */
+export interface CyclePhaseStatus {
+    /** Whether the schedule is currently in its on- or off-run. */
+    phase: "on" | "off";
+    /** 1-based day within the current run (e.g. 3 for the third on-day). */
+    dayNumber: number;
+    /** Length of the current run in days (`daysOn` or `daysOff`). */
+    runLength: number;
+    /** Days remaining in the current run, including today. */
+    daysLeft: number;
+    /** The phase that begins when the current run ends. */
+    nextPhase: "on" | "off";
+    /** Local midnight of the first day of the next run. */
+    nextPhaseStart: Date;
+}
+
+/**
+ * Where a cycle schedule sits in its on/off rhythm on `from`'s local day.
+ * Returns null for non-cycle schedules, malformed cycles, invalid start dates
+ * and dates before the schedule starts.
+ */
+export function cyclePhaseStatus(
+    schedule: Schedule,
+    from: Date = new Date()
+): CyclePhaseStatus | null {
+    if (schedule.frequencyType !== "cycle") return null;
+    const daysOn = schedule.daysOn;
+    const daysOff = schedule.daysOff;
+    if (!daysOn || daysOn < 1 || !daysOff || daysOff < 1) return null;
+    const start = localDateFromIso(schedule.startDate);
+    if (!start) return null;
+    const offset = diffDays(start, from);
+    if (offset < 0) return null;
+
+    const cycleLength = daysOn + daysOff;
+    const position = offset % cycleLength;
+    const phase = position < daysOn ? "on" : "off";
+    const dayNumber = phase === "on" ? position + 1 : position - daysOn + 1;
+    const runLength = phase === "on" ? daysOn : daysOff;
+    const daysLeft = runLength - dayNumber + 1;
+
+    return {
+        phase,
+        dayNumber,
+        runLength,
+        daysLeft,
+        nextPhase: phase === "on" ? "off" : "on",
+        nextPhaseStart: addDays(startOfLocalDay(from), daysLeft),
+    };
+}
+
+/**
+ * Human line for an active on/off run, e.g.
+ * "On day 3 of 5 · Off starts Tue, Feb 10 · 3 days left".
+ * Returns null when the schedule is not a cycle or has not started yet.
+ */
+export function cyclePhaseLabel(
+    schedule: Schedule,
+    from: Date = new Date()
+): string | null {
+    const status = cyclePhaseStatus(schedule, from);
+    if (!status) return null;
+    const phase = status.phase === "on" ? "On" : "Off";
+    const nextPhase = status.nextPhase === "on" ? "On" : "Off";
+    const days = status.daysLeft === 1 ? "day" : "days";
+    return (
+        `${phase} day ${status.dayNumber} of ${status.runLength} · ` +
+        `${nextPhase} starts ${formatDay(status.nextPhaseStart)} · ` +
+        `${status.daysLeft} ${days} left`
+    );
 }
 
 /**
