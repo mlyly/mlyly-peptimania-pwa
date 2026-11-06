@@ -4,7 +4,7 @@ import "./globals.css";
 
 import {LAST_COMMIT_HASH, LAST_MODIFIED, LAST_MODIFIED_TIME} from "@/lib/app-info";
 import {OfflineFooterMarker} from "./offline-footer-marker";
-import {OfflineBanner} from "@/components/app/offline-banner";
+import {OfflineNotice} from "@/components/app/offline-notice";
 import {Toaster} from "@/components/ui/toaster";
 import {TermsGate} from "@/components/legal/terms-gate";
 import {ServiceWorkerRegister} from "@/components/pwa/service-worker-register";
@@ -85,7 +85,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <script dangerouslySetInnerHTML={{__html: themeInitScript}}/>
     </head>
     <body className="min-h-full flex flex-col">
-    <OfflineBanner/>
+    <OfflineNotice/>
     {children}
     <TermsGate/>
     <Toaster/>

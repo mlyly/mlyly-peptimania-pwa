@@ -14,6 +14,8 @@ const toastVariants = cva(
                 default: "bg-background text-foreground",
                 success:
                     "border-emerald-500/40 bg-background text-foreground",
+                warning:
+                    "border-amber-500/40 bg-amber-500/10 text-foreground",
                 error:
                     "border-destructive/50 bg-destructive/10 text-foreground",
             },
@@ -47,7 +49,7 @@ function ToastRoot({
                        variant = "default",
                        ...props
                    }: React.ComponentProps<typeof ToastPrimitive.Root> & {
-    variant?: "default" | "success" | "error";
+    variant?: "default" | "success" | "warning" | "error";
 }) {
     return (
         <ToastPrimitive.Root
@@ -66,7 +68,7 @@ function ToastTitle({
     return (
         <ToastPrimitive.Title
             data-slot="toast-title"
-            className={cn("min-w-0 flex-1 font-medium leading-snug group-data-[variant=success]/toast:text-emerald-600 group-data-[variant=error]/toast:text-destructive dark:group-data-[variant=success]/toast:text-emerald-400", className)}
+            className={cn("min-w-0 flex-1 font-medium leading-snug group-data-[variant=success]/toast:text-emerald-600 group-data-[variant=warning]/toast:text-amber-700 group-data-[variant=error]/toast:text-destructive dark:group-data-[variant=success]/toast:text-emerald-400 dark:group-data-[variant=warning]/toast:text-amber-300", className)}
             {...props}
         />
     );

@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import {AlertCircle, CheckCircle2, Info, X} from "lucide-react";
+import {AlertCircle, AlertTriangle, CheckCircle2, Info, X} from "lucide-react";
 
 import {cn} from "@/lib/utils";
 import {
@@ -28,12 +28,14 @@ const EXIT_MS = 350;
 const TOAST_ICONS = {
     default: Info,
     success: CheckCircle2,
+    warning: AlertTriangle,
     error: AlertCircle,
 } as const;
 
 const ICON_CLASSES = {
     default: "text-muted-foreground",
     success: "text-emerald-600 dark:text-emerald-400",
+    warning: "text-amber-600 dark:text-amber-400",
     error: "text-destructive",
 } as const;
 

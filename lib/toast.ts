@@ -3,12 +3,12 @@
 //
 // Managers call `toast.success("BPC-157 updated.")` / `toast.error(...)`
 // from any event handler; the <Toaster/> mounted in the root layout
-// subscribes and renders them in a bottom Radix Toast viewport. Success
-// toasts auto-dismiss; error toasts stay until dismissed — mirroring the
-// semantics of the inline feedback lines this replaced.
+// subscribes and renders them in a bottom Radix Toast viewport. Success and
+// warning toasts auto-dismiss; error toasts stay until dismissed — mirroring
+// the semantics of the inline feedback lines this replaced.
 // ---------------------------------------------------------------------------
 
-export type ToastVariant = "default" | "success" | "error";
+export type ToastVariant = "default" | "success" | "warning" | "error";
 
 export interface ToastItem {
     id: number;
@@ -32,6 +32,7 @@ export interface ToastOptions {
 const DEFAULT_DURATIONS: Record<ToastVariant, number> = {
     default: 4000,
     success: 4000,
+    warning: 5000,
     error: 0,
 };
 
@@ -85,6 +86,8 @@ export interface Toast {
 
     success(title: string, options?: ToastOptions): number;
 
+    warning(title: string, options?: ToastOptions): number;
+
     error(title: string, options?: ToastOptions): number;
 
     dismiss(id?: number): void;
@@ -92,13 +95,15 @@ export interface Toast {
 
 /**
  * Imperative toast API: `toast("Saved.")`, `toast.success(...)`,
- * `toast.error(...)`, `toast.dismiss(id?)`.
+ * `toast.warning(...)`, `toast.error(...)`, `toast.dismiss(id?)`.
  */
 export const toast: Toast = Object.assign(
     (title: string, options?: ToastOptions) => push("default", title, options),
     {
         success: (title: string, options?: ToastOptions) =>
             push("success", title, options),
+        warning: (title: string, options?: ToastOptions) =>
+            push("warning", title, options),
         error: (title: string, options?: ToastOptions) =>
             push("error", title, options),
         dismiss: dismissToast,
