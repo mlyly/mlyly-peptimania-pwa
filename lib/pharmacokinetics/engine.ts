@@ -159,12 +159,12 @@ function mergeProfile(medication: Medication, options: PkBuildOptions): PkProfil
         profile.eliminationRatePerHour = undefined;
     }
 
-    if ((medication as any).absorptionRatePerHour !== undefined) {
-        (profile as any).absorptionRatePerHour = (medication as any).absorptionRatePerHour;
-        (profile as any).absorptionHalfLifeHours = undefined;
-    } else if ((medication as any).absorptionHalfLifeHours !== undefined) {
-        (profile as any).absorptionHalfLifeHours = (medication as any).absorptionHalfLifeHours;
-        (profile as any).absorptionRatePerHour = undefined;
+    if (medication.absorptionRatePerHour !== undefined) {
+        profile.absorptionRatePerHour = medication.absorptionRatePerHour;
+        profile.absorptionHalfLifeHours = undefined;
+    } else if (medication.absorptionHalfLifeHours !== undefined) {
+        profile.absorptionHalfLifeHours = medication.absorptionHalfLifeHours;
+        profile.absorptionRatePerHour = undefined;
     }
 
     const override = options.profiles?.[medication.id];
@@ -177,10 +177,10 @@ function mergeProfile(medication: Medication, options: PkBuildOptions): PkProfil
             profile.eliminationRatePerHour = undefined;
         }
         if (
-            (override as any).absorptionHalfLifeHours !== undefined &&
-            (override as any).absorptionRatePerHour === undefined
+            override.absorptionHalfLifeHours !== undefined &&
+            override.absorptionRatePerHour === undefined
         ) {
-            (profile as any).absorptionRatePerHour = undefined;
+            profile.absorptionRatePerHour = undefined;
         }
     }
 
