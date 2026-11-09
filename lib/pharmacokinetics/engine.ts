@@ -81,7 +81,7 @@ export function buildPkConcentrationSeries(
             end,
             now,
             profiles,
-            includePastScheduledDoses: options.includePastScheduledDoses ?? true,
+            includePastScheduledDoses: options.includePastScheduledDoses ?? false,
             includeFutureScheduledDoses: options.includeFutureScheduledDoses ?? true,
             pruneThreshold,
             maxScheduledLookbackDays,

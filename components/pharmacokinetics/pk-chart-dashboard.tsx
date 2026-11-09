@@ -176,6 +176,9 @@ export function PkChartDashboard() {
                         now: nowMs,
                         stepMinutes: range.stepMinutes,
                         maxPoints: 2000,
+                        // History reflects only doses actually taken; future
+                        // schedule occurrences still project the curve ahead.
+                        includePastScheduledDoses: false,
                     }
                 ),
             };

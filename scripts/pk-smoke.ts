@@ -468,17 +468,17 @@ function main() {
     check("engine returns one series per configured medication", result.series.length === 1);
     const series = result.series[0];
     check(
-        "engine carries logged/scheduled/projected counts",
+        "engine counts only the projected future occurrence by default",
         series.doseCounts.logged === 1 &&
-        series.doseCounts.scheduled === 2 &&
+        series.doseCounts.scheduled === 1 &&
         series.doseCounts.projected === 1,
         JSON.stringify(series.doseCounts)
     );
     check(
-        "engine dedupes the pinned log (C = 1 + 0.125, not 2 + 0.125)",
+        "engine ignores the unlogged past occurrence (C = 1, not 1 + 0.125)",
         (() => {
             const value = pointAt(series, d(2026, 1, 15, 8).getTime());
-            return value !== null && near(value, 1.125, 1e-12);
+            return value !== null && near(value, 1, 1e-12);
         })(),
         String(pointAt(series, d(2026, 1, 15, 8).getTime()))
     );
@@ -500,6 +500,20 @@ function main() {
     check(
         "engine option excludes past scheduled doses",
         near(pointAt(noPast.series[0], d(2026, 1, 15, 8).getTime()) ?? -1, 1)
+    );
+
+    const withPast = buildPkConcentrationSeries(engineInput, {
+        start: chartStart,
+        end: chartEnd,
+        now: NOW,
+        includePastScheduledDoses: true,
+    });
+    check(
+        "engine option can opt into missed past scheduled doses",
+        near(
+            pointAt(withPast.series[0], d(2026, 1, 15, 8).getTime()) ?? -1,
+            1.125
+        )
     );
 
     const noFuture = buildPkConcentrationSeries(engineInput, {

@@ -2,10 +2,12 @@
  * Turns the persisted domain data (medications, schedules and dose logs) into
  * a single, deduplicated, time-sorted list of dose events for the PK model.
  *
- * Historical logs are facts. Scheduled occurrences stand in for doses that
- * have no matching log — future projections and (optionally) missed doses in
- * the past. An occurrence that a log already completed is skipped so the same
- * dose is never counted twice.
+ * Historical logs are facts. Scheduled occurrences are used for future
+ * projections; unlogged past occurrences are omitted by default so skipped
+ * doses never add concentration to the historical curve. Callers can opt into
+ * synthesizing missed past doses with `includePastScheduledDoses`. An
+ * occurrence that a log already completed is skipped so the same dose is never
+ * counted twice.
  */
 import type {DoseLog, DoseUnit, Medication, Schedule} from "@/lib/db/types";
 import {reconstitutionConcentration} from "@/lib/medications/derived";

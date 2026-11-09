@@ -167,7 +167,12 @@ export interface PkBuildOptions {
     profiles?: Readonly<Record<string, PkProfile | undefined>>;
     /** Fallback profile applied beneath medication fields and overrides. */
     defaultProfile?: PkProfile;
-    /** Include unlogged scheduled occurrences before `now`. Default true. */
+    /**
+     * Include unlogged scheduled occurrences before `now`. Default false:
+     * the historical curve reflects doses that were actually taken, so skipped
+     * or missed occurrences never add concentration. Future occurrences are
+     * still projected when `includeFutureScheduledDoses` is enabled.
+     */
     includePastScheduledDoses?: boolean;
     /** Include scheduled occurrences after `now`. Default true. */
     includeFutureScheduledDoses?: boolean;
