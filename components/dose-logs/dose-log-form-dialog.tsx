@@ -7,7 +7,6 @@ import {MapPin, TriangleAlert} from "lucide-react";
 
 import type {DoseLog, Medication, Schedule} from "@/lib/db/types";
 import {DOSE_UNITS, doseUnitLabel, isInjectableMedicationType, medicationTypeMeta,} from "@/lib/medications/constants";
-import {CUSTOM_SITE, INJECTION_SITES, UNSPECIFIED_SITE} from "@/lib/scheduling/constants";
 import {doseLogFormSchema, type DoseLogFormValues, doseLogToFormValues, toDoseLogInput,} from "@/lib/scheduling/schema";
 import {logDose, updateDoseLog} from "@/lib/scheduling/service";
 
@@ -53,17 +52,13 @@ function DoseLogForm({log, medications, schedules, recentSites, onSaved, onCance
     });
 
     const watched = useWatch({control: form.control});
-    const siteSelection = watched.siteSelection ?? UNSPECIFIED_SITE;
-    const siteDetail = watched.siteDetail ?? "";
+    const injectionSite = watched.injectionSite ?? "";
     const selectedMedication = React.useMemo(
         () => medications.find((medication) => medication.id === (watched.medicationId ?? "")) ?? null,
         [medications, watched.medicationId]
     );
     const injectable = isInjectableMedicationType(selectedMedication?.type);
-    const initialSite =
-        siteSelection === CUSTOM_SITE && isApproximateInjectionSite(siteDetail)
-            ? siteDetail
-            : null;
+    const initialSite = isApproximateInjectionSite(injectionSite) ? injectionSite : null;
 
     const submit = async (values: DoseLogFormValues) => {
         setSaving(true);
@@ -215,28 +210,19 @@ function DoseLogForm({log, medications, schedules, recentSites, onSaved, onCance
 
                 <FormField
                     control={form.control}
-                    name="siteSelection"
+                    name="injectionSite"
                     render={({field}) => (
                         <FormItem>
-                            <FormLabel>Injection site</FormLabel>
-                            <Select onValueChange={field.onChange} value={field.value}>
-                                <FormControl>
-                                    <SelectTrigger className="w-full">
-                                        <SelectValue/>
-                                    </SelectTrigger>
-                                </FormControl>
-                                <SelectContent>
-                                    <SelectItem value={UNSPECIFIED_SITE}>Not recorded</SelectItem>
-                                    {INJECTION_SITES.map((site) => (
-                                        <SelectItem key={site} value={site}>
-                                            {site}
-                                        </SelectItem>
-                                    ))}
-                                    <SelectItem value={CUSTOM_SITE}>Other…</SelectItem>
-                                </SelectContent>
-                            </Select>
+                            <FormLabel>Site (other)</FormLabel>
+                            <FormControl>
+                                <Input
+                                    placeholder="e.g. Left outer thigh"
+                                    {...field}
+                                />
+                            </FormControl>
                             <FormDescription>
-                                Optional — leave “Not recorded” for oral or other non-injected doses.
+                                Optional — choose a location on the body map, or type one that
+                                isn’t shown there.
                             </FormDescription>
                             {injectable && (
                                 <Button
@@ -255,25 +241,6 @@ function DoseLogForm({log, medications, schedules, recentSites, onSaved, onCance
                         </FormItem>
                     )}
                 />
-
-                {siteSelection === CUSTOM_SITE && (
-                    <FormField
-                        control={form.control}
-                        name="siteDetail"
-                        render={({field}) => (
-                            <FormItem>
-                                <FormLabel>Site (other)</FormLabel>
-                                <FormControl>
-                                    <Input
-                                        placeholder="e.g. Left outer thigh"
-                                        {...field}
-                                    />
-                                </FormControl>
-                                <FormMessage/>
-                            </FormItem>
-                        )}
-                    />
-                )}
 
                 <FormField
                     control={form.control}
@@ -329,12 +296,7 @@ function DoseLogForm({log, medications, schedules, recentSites, onSaved, onCance
                 medicationName={selectedMedication?.name}
                 recentSites={recentSites}
                 onConfirm={async (picked) => {
-                    form.setValue(
-                        "siteSelection",
-                        picked ? CUSTOM_SITE : UNSPECIFIED_SITE,
-                        {shouldDirty: true, shouldValidate: true}
-                    );
-                    form.setValue("siteDetail", picked ?? "", {
+                    form.setValue("injectionSite", picked ?? "", {
                         shouldDirty: true,
                         shouldValidate: true,
                     });

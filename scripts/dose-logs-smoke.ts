@@ -6,8 +6,8 @@
  *
  * Exercises: the datetime-local conversions (minute precision, local-zone
  * round-trips, impossible-date rejection), the `prefilledDoseAmount` derived
- * helper, the shared dose form schema (site preset/"other"/"not recorded"
- * resolution, numeric + datetime validation, create/edit round-trip), the v4
+ * helper, the shared dose form schema (free-text site resolution, numeric +
+ * datetime validation, create/edit round-trip), the v4
  * additive migration (both the live `up` and the import `upSnapshot` twin),
  * import promotion of a v3 export, and the Dexie service (logDose/logDoses/
  * getDoseLog/updateDoseLog with provenance preservation/deleteDoseLog).
@@ -33,7 +33,7 @@ import {
     SCHEMA_VERSION_KEY,
     validateExportPayload,
 } from "../lib/db";
-import {CUSTOM_SITE, MAX_SITE_LENGTH, UNSPECIFIED_SITE} from "../lib/scheduling/constants";
+import {MAX_SITE_LENGTH} from "../lib/scheduling/constants";
 import {DATETIME_LOCAL_PATTERN, datetimeLocalToIso, isoToDatetimeLocal, isSameLocalDay} from "../lib/scheduling/dates";
 import {prefilledDoseAmount} from "../lib/scheduling/derived";
 import {
@@ -41,8 +41,6 @@ import {
     doseLogInputSchema,
     doseLogToFormValues,
     doseLogUpdateInputSchema,
-    resolveInjectionSite,
-    siteSelectionFor,
     toDoseLogInput,
 } from "../lib/scheduling/schema";
 import {deleteDoseLog, getDoseLog, listDoseLogs, logDose, logDoses, updateDoseLog,} from "../lib/scheduling/service";
@@ -165,39 +163,6 @@ async function main() {
     );
 
     // ============================================================= form schema
-    // -- site field helpers
-    const presetSite = siteSelectionFor({injectionSite: "Abdomen"});
-    check(
-        "siteSelectionFor keeps a preset as its preset",
-        presetSite.siteSelection === "Abdomen" && presetSite.siteDetail === ""
-    );
-    const customSite = siteSelectionFor({injectionSite: "Left outer thigh"});
-    check(
-        "siteSelectionFor maps free text to 'other' + detail",
-        customSite.siteSelection === CUSTOM_SITE && customSite.siteDetail === "Left outer thigh"
-    );
-    const noSite = siteSelectionFor(null);
-    check(
-        "siteSelectionFor maps an absent site to 'not recorded'",
-        noSite.siteSelection === UNSPECIFIED_SITE && noSite.siteDetail === ""
-    );
-    check(
-        "resolveInjectionSite keeps a preset (ignoring a stale detail)",
-        resolveInjectionSite({siteSelection: "Thigh", siteDetail: "stale"}) === "Thigh"
-    );
-    check(
-        "resolveInjectionSite trims the 'other' detail",
-        resolveInjectionSite({siteSelection: CUSTOM_SITE, siteDetail: "  Left thigh  "}) === "Left thigh"
-    );
-    check(
-        "resolveInjectionSite drops an empty 'other' detail",
-        resolveInjectionSite({siteSelection: CUSTOM_SITE, siteDetail: "   "}) === undefined
-    );
-    check(
-        "resolveInjectionSite drops 'not recorded' entirely",
-        resolveInjectionSite({siteSelection: UNSPECIFIED_SITE, siteDetail: "ignored"}) === undefined
-    );
-
     // -- create mode: dialog defaults seed from the first medication
     const defaults = doseLogToFormValues(null, [medA, medB], [scheduleA]);
     check("create mode seeds the first medication", defaults.medicationId === "med-a");
@@ -214,7 +179,7 @@ async function main() {
     );
     check(
         "create mode leaves the site unrecorded and notes empty",
-        defaults.siteSelection === UNSPECIFIED_SITE && defaults.siteDetail === "" && defaults.notes === ""
+        defaults.injectionSite === "" && defaults.notes === ""
     );
 
     // -- validated values → canonical service input (create)
@@ -223,8 +188,7 @@ async function main() {
         doseAmount: "1.5",
         unit: "mg",
         timestamp: "2026-01-15T10:30",
-        siteSelection: "Abdomen",
-        siteDetail: "",
+        injectionSite: "  Abdomen  ",
         notes: "  test  ",
     });
     const createdInput = toDoseLogInput(parsedForm);
@@ -269,8 +233,8 @@ async function main() {
         JSON.stringify({dose: editValues.doseAmount, unit: editValues.unit, ts: editValues.timestamp})
     );
     check(
-        "edit mode maps the stored free-text site to 'other' + detail",
-        editValues.siteSelection === CUSTOM_SITE && editValues.siteDetail === "Left outer thigh"
+        "edit mode maps the stored free-text site verbatim",
+        editValues.injectionSite === "Left outer thigh"
     );
     const roundTrip = toDoseLogInput(doseLogFormSchema.parse(editValues));
     check(
@@ -316,23 +280,13 @@ async function main() {
         "form rejects a malformed datetime-local value",
         !malformedDatetime.success && malformedDatetime.error.issues.some((i) => i.path[0] === "timestamp")
     );
-    const emptyOther = doseLogFormSchema.safeParse({
-        ...defaults,
-        siteSelection: CUSTOM_SITE,
-        siteDetail: "  ",
-    });
-    check(
-        "form requires a description when the site is 'other'",
-        !emptyOther.success && emptyOther.error.issues.some((i) => i.path[0] === "siteDetail")
-    );
     const longSite = doseLogFormSchema.safeParse({
         ...defaults,
-        siteSelection: CUSTOM_SITE,
-        siteDetail: "x".repeat(MAX_SITE_LENGTH + 1),
+        injectionSite: "x".repeat(MAX_SITE_LENGTH + 1),
     });
     check(
         "form caps the free-text site at 60 characters",
-        !longSite.success && longSite.error.issues.some((i) => i.path[0] === "siteDetail")
+        !longSite.success && longSite.error.issues.some((i) => i.path[0] === "injectionSite")
     );
 
     // =========================================================== v3 → v10 migration

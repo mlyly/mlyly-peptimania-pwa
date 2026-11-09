@@ -19,7 +19,7 @@ import {z} from "zod";
 import type {DoseLog, DoseUnit, Medication, Schedule, Weekday} from "@/lib/db/types";
 import {DOSE_UNITS} from "@/lib/medications/constants";
 import {parseDecimalInput} from "@/lib/units";
-import {CUSTOM_SITE, INJECTION_SITES, MAX_SITE_LENGTH, UNSPECIFIED_SITE, WEEKDAYS,} from "./constants";
+import {MAX_SITE_LENGTH, WEEKDAYS} from "./constants";
 import {
     DATE_ONLY_PATTERN,
     dateOnlyIso,
@@ -479,10 +479,8 @@ export const doseLogFormSchema = z
             .string()
             .regex(DATETIME_LOCAL_PATTERN, "Pick a date and time")
             .refine((value) => datetimeLocalToIso(value) !== null, "Not a real date and time"),
-        /** A site preset, "other" (free text), or the "not recorded" sentinel. */
-        siteSelection: z.enum([UNSPECIFIED_SITE, CUSTOM_SITE, ...INJECTION_SITES]),
-        /** Free-text site — required only when `siteSelection` is "other". */
-        siteDetail: z.string().trim().max(MAX_SITE_LENGTH, "Keep the site under 60 characters"),
+        /** Free-text injection site — filled by the body-map picker or typed. */
+        injectionSite: z.string().trim().max(MAX_SITE_LENGTH, "Keep the site under 60 characters"),
         notes: z.string().trim().max(2000, "Notes are limited to 2000 characters"),
     })
     .superRefine((values, ctx) => {
@@ -497,52 +495,9 @@ export const doseLogFormSchema = z
                 ctx.addIssue({code: "custom", path: ["doseAmount"], message: "Dose looks too large"});
             }
         }
-
-        if (values.siteSelection === CUSTOM_SITE && values.siteDetail.trim() === "") {
-            ctx.addIssue({
-                code: "custom",
-                path: ["siteDetail"],
-                message: "Describe the site, or pick a preset (or 'Not recorded')",
-            });
-        }
     });
 
 export type DoseLogFormValues = z.infer<typeof doseLogFormSchema>;
-
-/** The dose form's site select: a preset label, "other", or "unspecified". */
-export type SiteSelection = DoseLogFormValues["siteSelection"];
-
-/**
- * Maps a stored log to the form's site fields: a preset label keeps its
- * preset; any other non-empty text becomes "other" + free text; absent (or
- * empty) is the "not recorded" sentinel.
- */
-export function siteSelectionFor(
-    log: Pick<DoseLog, "injectionSite"> | null | undefined
-): { siteSelection: SiteSelection; siteDetail: string } {
-    const site = log?.injectionSite?.trim();
-    if (!site) return {siteSelection: UNSPECIFIED_SITE, siteDetail: ""};
-    if ((INJECTION_SITES as readonly string[]).includes(site)) {
-        return {siteSelection: site as SiteSelection, siteDetail: ""};
-    }
-    return {siteSelection: CUSTOM_SITE, siteDetail: site};
-}
-
-/**
- * Collapses the two site fields into the single stored value: a preset keeps
- * its label; "other" keeps the free text; "not recorded" (or an empty detail)
- * leaves the site unset.
- */
-export function resolveInjectionSite(
-    values: Pick<DoseLogFormValues, "siteSelection" | "siteDetail">
-): string | undefined {
-    if (values.siteSelection === UNSPECIFIED_SITE) return undefined;
-    if (values.siteSelection === CUSTOM_SITE) {
-        const detail = values.siteDetail.trim();
-        return detail === "" ? undefined : detail;
-    }
-    return values.siteSelection;
-}
 
 /**
  * Builds dialog defaults. Pass a log to prefill for editing; pass the
@@ -560,7 +515,7 @@ export function doseLogToFormValues(
             doseAmount: log.doseAmount.toString(),
             unit: log.unit,
             timestamp: isoToDatetimeLocal(log.timestamp),
-            ...siteSelectionFor(log),
+            injectionSite: log.injectionSite ?? "",
             notes: log.notes ?? "",
         };
     }
@@ -570,8 +525,7 @@ export function doseLogToFormValues(
         doseAmount: prefilledDoseAmount(medication, schedules).toString(),
         unit: medication?.unit ?? "mg",
         timestamp: isoToDatetimeLocal(new Date().toISOString()),
-        siteSelection: UNSPECIFIED_SITE,
-        siteDetail: "",
+        injectionSite: "",
         notes: "",
     };
 }
@@ -586,7 +540,7 @@ export function toDoseLogInput(values: DoseLogFormValues): DoseLogInput {
         // parse can't survive validation; on the create path it maps to "now"
         // (the update path requires it via `doseLogUpdateInputSchema`).
         timestamp: datetimeLocalToIso(values.timestamp) ?? undefined,
-        injectionSite: resolveInjectionSite(values),
+        injectionSite: values.injectionSite.trim() || undefined,
         notes: values.notes.trim() || undefined,
     };
 }
