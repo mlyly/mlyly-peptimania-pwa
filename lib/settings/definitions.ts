@@ -25,7 +25,8 @@ export type SettingKey =
     | "notifications.consentAt"
     | "notifications.consentVersion"
     | "notifications.detailLevel"
-    | "notifications.leadMinutes";
+    | "notifications.leadMinutes"
+    | "notifications.overrides";
 
 /** Selectable page sizes for paged lists; `"all"` disables pagination. */
 export type PageSize = 10 | 20 | 50 | 100 | "all";
@@ -53,6 +54,32 @@ export const NOTIFICATION_DETAIL_LEVELS: readonly NotificationDetailLevel[] = [
 /** Minutes before the scheduled time a reminder should fire. */
 export const NOTIFICATION_LEAD_MINUTES = [0, 5, 10, 15, 30, 60] as const;
 export type NotificationLeadMinutes = (typeof NOTIFICATION_LEAD_MINUTES)[number];
+
+/**
+ * Per-occurrence notification override from the notification centre.
+ *
+ * - `snoozeUntil`: ISO instant at which the reminder should fire instead of
+ *   the normal lead-time instant.
+ * - `skippedAt`: ISO timestamp of an explicit "skip this occurrence" action;
+ *   the occurrence is left out of the relay horizon.
+ *
+ * Keys are occurrence keys (`scheduleId@YYYY-MM-DD`). Only upcoming/recent
+ * entries matter, so stale keys are harmless and can be pruned freely.
+ */
+export interface NotificationOverride {
+    snoozeUntil?: string;
+    skippedAt?: string;
+}
+
+export type NotificationOverrides = Record<string, NotificationOverride>;
+
+const MAX_NOTIFICATION_OVERRIDES = 500;
+
+function parseIsoTimestamp(value: unknown): string | undefined {
+    if (typeof value !== "string") return undefined;
+    const time = Date.parse(value);
+    return Number.isFinite(time) ? new Date(time).toISOString() : undefined;
+}
 
 export function pageSizeLabel(size: PageSize): string {
     return size === "all" ? "All" : `${size} / page`;
@@ -96,6 +123,8 @@ export interface AppSettings {
     "notifications.detailLevel": NotificationDetailLevel;
     /** How many minutes before the scheduled time a reminder fires. */
     "notifications.leadMinutes": NotificationLeadMinutes;
+    /** Snooze/skip actions from the notification centre, by occurrence key. */
+    "notifications.overrides": NotificationOverrides;
 }
 
 const CHART_RANGE_IDS: readonly string[] = CHART_RANGES.map((range) => range.id);
@@ -112,6 +141,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     "notifications.consentVersion": null,
     "notifications.detailLevel": "generic",
     "notifications.leadMinutes": 0,
+    "notifications.overrides": {},
 };
 
 interface SettingDefinition<K extends SettingKey = SettingKey> {
@@ -217,6 +247,30 @@ const definitions: { [K in SettingKey]: SettingDefinition<K> } = {
             (NOTIFICATION_LEAD_MINUTES as readonly number[]).includes(raw)
                 ? (raw as NotificationLeadMinutes)
                 : DEFAULT_SETTINGS["notifications.leadMinutes"],
+    },
+    "notifications.overrides": {
+        key: "notifications.overrides",
+        description: "Per-occurrence snooze/skip actions from the notification centre",
+        parse: (raw) => {
+            const result: NotificationOverrides = {};
+            if (!raw || typeof raw !== "object" || Array.isArray(raw)) return result;
+            let count = 0;
+            for (const [key, value] of Object.entries(raw)) {
+                if (count >= MAX_NOTIFICATION_OVERRIDES) break;
+                if (typeof key !== "string" || key.length === 0 || key.length > 300) continue;
+                if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+                const record = value as Record<string, unknown>;
+                const snoozeUntil = parseIsoTimestamp(record.snoozeUntil);
+                const skippedAt = parseIsoTimestamp(record.skippedAt);
+                if (!snoozeUntil && !skippedAt) continue;
+                result[key] = {
+                    ...(snoozeUntil ? {snoozeUntil} : {}),
+                    ...(skippedAt ? {skippedAt} : {}),
+                };
+                count += 1;
+            }
+            return result;
+        },
     },
 };
 

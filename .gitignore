@@ -32,6 +32,14 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
+
+# notification relay SQLite database (local dev default)
+/.data/
+
+# generated service worker (created by `npm run build`)
+/public/sw.js
+/public/sw.js.map
 
 # vercel
 .vercel
@@ -41,3 +49,7 @@ yarn-error.log*
 next-env.d.ts
 .idea
 opencode.json
+/fanprofile_backup.json
+/opencode.jsonc
+/update_fan_profile.py
+SECRETS.md

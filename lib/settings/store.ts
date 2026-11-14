@@ -62,6 +62,11 @@ async function applySetting<K extends keyof AppSettings>(key: K, value: AppSetti
 async function applyReset(): Promise<void> {
     try {
         await resetAllSettings();
+        // Restoring defaults turns notifications off; also remove the relay
+        // subscription so background pushes actually stop (best-effort).
+        await import("@/lib/notifications/relay")
+            .then(({disableNotificationRelay}) => disableNotificationRelay())
+            .catch(() => undefined);
         cache = {status: "ready", settings: DEFAULT_SETTINGS};
         emit();
     } catch {

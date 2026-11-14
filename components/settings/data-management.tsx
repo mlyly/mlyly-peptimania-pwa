@@ -29,7 +29,11 @@ import {
     wipeAllLocalData,
     writeImportedPayload,
 } from "@/lib/db";
+import {hasCurrentNotificationConsent} from "@/lib/notifications";
+import {disableNotificationRelay} from "@/lib/notifications/relay";
+import {requestNotificationSync} from "@/lib/notifications/sync-events";
 import {invalidateSettings} from "@/lib/settings";
+import {loadSettings} from "@/lib/settings/service";
 
 // ---------------------------------------------------------------------------
 // Shared bits
@@ -381,6 +385,20 @@ function ImportCard({onImported}: { onImported: () => void }) {
             // Settings rows may have been replaced — refresh the shared
             // snapshot so chart controls show the imported values.
             await invalidateSettings();
+            // The imported schedules/logs changed the reminder horizon (and
+            // may have enabled background delivery). Re-sync once the data
+            // is committed; when the backup has notifications off, remove the
+            // relay subscription instead so background pushes stop here too.
+            const importedSettings = await loadSettings();
+            const consentCurrent = hasCurrentNotificationConsent(
+                importedSettings["notifications.consentAt"],
+                importedSettings["notifications.consentVersion"]
+            );
+            if (importedSettings["notifications.enabled"] && consentCurrent) {
+                requestNotificationSync({immediate: true});
+            } else {
+                await disableNotificationRelay();
+            }
             const {counts} = summarizePayload(state.payload);
             const total = counts.medications + counts.schedules + counts.doseLogs +
                 counts.measurementTypes + counts.measurementLogs + counts.settings;
@@ -551,6 +569,11 @@ function DangerZoneCard() {
         setConfirmOpen(false);
         setBusy("Erasing local data…");
         try {
+            // Best-effort: remove the relay subscription before the local
+            // credentials are erased, so a wiped device cannot keep receiving
+            // (or leave orphaned) background reminders. Offline wipes still
+            // proceed — the relay prunes unseen subscriptions later.
+            await disableNotificationRelay();
             await wipeAllLocalData();
             setBusy("Local data erased. Reloading…");
             window.setTimeout(() => window.location.reload(), 800);

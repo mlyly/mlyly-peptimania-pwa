@@ -62,7 +62,8 @@ function writeSentMap(map: SentMap): void {
 async function showSystemNotification(
     title: string,
     body: string,
-    tag: string
+    tag: string,
+    url: string
 ): Promise<void> {
     if (!("Notification" in window) || window.Notification.permission !== "granted") return;
     try {
@@ -74,7 +75,7 @@ async function showSystemNotification(
             icon: "/icons/icon-192.png",
             badge: "/icons/icon-192.png",
             // The service worker's notificationclick handler opens this URL.
-            data: {url: "/"},
+            data: {url},
         });
     } catch {
         // No active worker (e.g. dev server) — the tab may still be visible;
@@ -92,6 +93,7 @@ export function DoseReminderWatcher() {
     // version bump or a hand-edited import), even if `enabled` is still true.
     const enabled = loaded && settings["notifications.enabled"] && consentCurrent;
     const leadMinutes = settings["notifications.leadMinutes"];
+    const overrides = settings["notifications.overrides"];
 
     React.useEffect(() => {
         if (!enabled) return;
@@ -129,14 +131,32 @@ export function DoseReminderWatcher() {
                 const due = agenda
                     .filter((occurrence) => {
                         if (occurrence.status === "done") return false;
-                        const at = occurrence.scheduledAt.getTime();
-                        return at - leadMs <= now.getTime() && at >= now.getTime() - LATE_WINDOW_MS;
+                        const override = overrides[occurrence.key];
+                        if (override?.skippedAt) return false;
+                        const scheduledAt = occurrence.scheduledAt.getTime();
+                        let notifyAt = scheduledAt - leadMs;
+                        if (override?.snoozeUntil) {
+                            const snoozed = Date.parse(override.snoozeUntil);
+                            if (Number.isFinite(snoozed) && snoozed > notifyAt) {
+                                notifyAt = snoozed;
+                            }
+                        }
+                        return (
+                            notifyAt <= now.getTime() &&
+                            Math.max(scheduledAt, notifyAt) >= now.getTime() - LATE_WINDOW_MS
+                        );
                     })
                     .slice(0, MAX_PER_TICK);
 
                 for (const occurrence of due) {
-                    if (sent[occurrence.key]) continue;
-                    sent[occurrence.key] = now.getTime();
+                    const override = overrides[occurrence.key];
+                    // A snoozed occurrence gets a fresh dedupe slot so the
+                    // delayed reminder can alert again.
+                    const dedupeKey = override?.snoozeUntil
+                        ? `${occurrence.key}@${override.snoozeUntil}`
+                        : occurrence.key;
+                    if (sent[dedupeKey]) continue;
+                    sent[dedupeKey] = now.getTime();
                     changed = true;
 
                     const medicationName = medicationNames.get(occurrence.medicationId);
@@ -149,7 +169,12 @@ export function DoseReminderWatcher() {
                     if (document.visibilityState === "visible") {
                         toast(title, {description: body, duration: 10_000});
                     } else {
-                        await showSystemNotification(title, body, `dose-${occurrence.key}`);
+                        await showSystemNotification(
+                            title,
+                            body,
+                            `dose-${occurrence.key}`,
+                            `/notifications?focus=${encodeURIComponent(occurrence.key)}`
+                        );
                     }
                 }
 
@@ -173,7 +198,7 @@ export function DoseReminderWatcher() {
             window.clearInterval(interval);
             document.removeEventListener("visibilitychange", onVisibilityChange);
         };
-    }, [enabled, leadMinutes]);
+    }, [enabled, leadMinutes, overrides]);
 
     return null;
 }

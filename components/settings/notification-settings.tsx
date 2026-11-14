@@ -3,22 +3,34 @@
 /**
  * Settings → Notifications.
  *
- * The disclosure is intentionally explicit: enabling *background*
- * notifications is the only optional feature that can send data off the
- * device, so it requires a recorded, versioned consent before reminders turn
- * on. The on-device watcher (`DoseReminderWatcher`) delivers reminders while
- * the app is open; the relay described in `docs/notifications-plan.md` adds
- * background delivery later.
+ * Enabling reminders is the only optional feature that can send data off the
+ * device, so the card requires an explicit, versioned consent before the
+ * browser permission prompt. The embedded relay is optional: when it is not
+ * configured, reminders still work while the app is open (on-device watcher).
+ *
+ * Background state is read from `lib/notifications/relay.ts`; the bearer token
+ * and AES key never appear in this component or in exported settings.
  */
 import * as React from "react";
-import {BellRing, Lock, Power, Send, ShieldAlert, ShieldCheck, TriangleAlert} from "lucide-react";
+import Link from "next/link";
+import {
+    ArrowRight,
+    BellRing,
+    Lock,
+    Power,
+    RefreshCw,
+    Send,
+    ShieldAlert,
+    ShieldCheck,
+    TriangleAlert,
+} from "lucide-react";
 
 import {Badge} from "@/components/ui/badge";
 import {Button} from "@/components/ui/button";
 import {Card, CardContent, CardDescription, CardHeader, CardTitle} from "@/components/ui/card";
 import {Checkbox} from "@/components/ui/checkbox";
 import {Label} from "@/components/ui/label";
-import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue,} from "@/components/ui/select";
+import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue} from "@/components/ui/select";
 import {Skeleton} from "@/components/ui/skeleton";
 import {
     getNotificationSupport,
@@ -29,6 +41,15 @@ import {
     type NotificationSupport,
     requestNotificationPermission,
 } from "@/lib/notifications";
+import {
+    disableNotificationRelay,
+    getRelayStatus,
+    refreshRelayStatus,
+    requestNotificationSync,
+    sendRelayTestPush,
+    syncNotificationsNow,
+    useRelayStatus,
+} from "@/lib/notifications/relay";
 import {
     NOTIFICATION_DETAIL_LEVELS,
     NOTIFICATION_LEAD_MINUTES,
@@ -54,7 +75,7 @@ function detailHint(level: NotificationDetailLevel): string {
         : "Medication name and dose are encrypted end-to-end; the relay cannot read them.";
 }
 
-async function showTestNotification(): Promise<void> {
+async function showLocalTestNotification(): Promise<void> {
     if (!("Notification" in window) || window.Notification.permission !== "granted") {
         throw new Error("Notification permission is not granted.");
     }
@@ -75,6 +96,7 @@ async function showTestNotification(): Promise<void> {
 
 export function NotificationSettings() {
     const {settings, loaded, setSetting} = useAppSettings();
+    const relay = useRelayStatus();
     const [support, setSupport] = React.useState<NotificationSupport | null>(null);
     const [agreed, setAgreed] = React.useState(false);
     const [busy, setBusy] = React.useState<string | null>(null);
@@ -85,11 +107,16 @@ export function NotificationSettings() {
         settings["notifications.consentVersion"]
     );
     const active = enabled && consentCurrent;
+    const relayConfigured = relay.configured === true;
+    const backgroundConnected = relayConfigured && relay.subscriptionActive;
 
-    // Permission and install state can change outside React (browser settings,
-    // iOS Home Screen install), so re-read them on focus/visibility changes.
+    // Permission, install state and relay availability can change outside
+    // React (browser settings, iOS install, deploy with/without VAPID keys).
     React.useEffect(() => {
-        const refresh = () => setSupport(getNotificationSupport());
+        const refresh = () => {
+            setSupport(getNotificationSupport());
+            void refreshRelayStatus();
+        };
         refresh();
         window.addEventListener("focus", refresh);
         document.addEventListener("visibilitychange", refresh);
@@ -123,14 +150,41 @@ export function NotificationSettings() {
             await setSetting("notifications.consentAt", now);
             await setSetting("notifications.consentVersion", NOTIFICATIONS_CONSENT_VERSION);
             await setSetting("notifications.enabled", true);
-            toast.success("Notifications enabled on this device.", {
-                description:
-                    "Reminders appear while the app is open. The background relay in the plan will add delivery while it is closed.",
-            });
+
+            if (relayConfigured) {
+                setBusy("Connecting to the relay…");
+                await syncNotificationsNow();
+                if (!getRelayStatus().subscriptionActive) {
+                    // Consent/permission are kept; only background delivery
+                    // failed. Leave reminders off so the retry is explicit.
+                    await setSetting("notifications.enabled", false);
+                    toast.error("Background delivery could not connect.", {
+                        description:
+                            getRelayStatus().lastError ??
+                            "Check your connection and try again, or use on-device reminders.",
+                    });
+                    return;
+                }
+                toast.success("Notifications enabled.", {
+                    description:
+                        "Background reminders are connected. On-device alerts also work while the app is open.",
+                });
+            } else {
+                toast.success("On-device reminders enabled.", {
+                    description:
+                        relay.configured === false
+                            ? "This deployment has no notification relay, so background delivery is unavailable. Reminders appear while the app is open."
+                            : "The relay could not be verified. Reminders appear while the app is open; background delivery retries automatically.",
+                });
+            }
         } catch (error: unknown) {
             toast.error(error instanceof Error ? error.message : String(error));
         } finally {
             setBusy(null);
+            if (!getRelayStatus().subscriptionActive) {
+                // Keep status fresh even when the flow failed early.
+                void refreshRelayStatus();
+            }
         }
     }
 
@@ -138,6 +192,7 @@ export function NotificationSettings() {
         setBusy("Turning off…");
         try {
             await setSetting("notifications.enabled", false);
+            await disableNotificationRelay();
             toast.success("Notifications turned off.");
         } finally {
             setBusy(null);
@@ -147,10 +202,33 @@ export function NotificationSettings() {
     async function test(): Promise<void> {
         setBusy("Sending test…");
         try {
-            await showTestNotification();
-            toast.success("Test notification sent.");
+            if (relayConfigured) {
+                await sendRelayTestPush();
+                toast.success("Test push sent through the relay.");
+            } else {
+                await showLocalTestNotification();
+                toast.success("Local test notification sent.");
+            }
         } catch (error: unknown) {
             toast.error(error instanceof Error ? error.message : String(error));
+        } finally {
+            setBusy(null);
+        }
+    }
+
+    async function reconnect(): Promise<void> {
+        setBusy("Reconnecting…");
+        try {
+            await syncNotificationsNow();
+            if (getRelayStatus().subscriptionActive) {
+                toast.success("Background delivery reconnected.");
+            } else {
+                toast.error("Background delivery could not connect.", {
+                    description:
+                        getRelayStatus().lastError ??
+                        "Check your connection and try again.",
+                });
+            }
         } finally {
             setBusy(null);
         }
@@ -194,7 +272,7 @@ export function NotificationSettings() {
                     </p>
                     <p className="text-muted-foreground mt-1.5">
                         Background dose reminders require a relay server. If you enable
-                        background delivery once it is configured, the relay receives only a{" "}
+                        background delivery, the relay receives only a{" "}
                         <strong>minimal</strong> set of data:
                     </p>
                     <ul className="text-muted-foreground mt-2 flex list-disc flex-col gap-1 pl-5">
@@ -202,9 +280,7 @@ export function NotificationSettings() {
                             <li key={item}>{item}</li>
                         ))}
                     </ul>
-                    <p className="text-muted-foreground mt-2">
-                        It never receives:
-                    </p>
+                    <p className="text-muted-foreground mt-2">It never receives:</p>
                     <ul className="text-muted-foreground mt-1 flex list-disc flex-col gap-1 pl-5">
                         {NOTIFICATION_LOCAL_ONLY_DATA.map((item) => (
                             <li key={item}>{item}</li>
@@ -212,8 +288,25 @@ export function NotificationSettings() {
                     </ul>
                     <p className="text-muted-foreground mt-2 flex items-start gap-1.5 text-xs">
                         <TriangleAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden/>
-                        Current build: reminders are displayed on this device only; no server
-                        is contacted. The relay contract and client integration plan are in{" "}
+                        {relay.configured === true ? (
+                            <>
+                                Background delivery is configured for this deployment. The
+                                relay database stores reminder instants, not your medication
+                                history.
+                            </>
+                        ) : relay.configured === false ? (
+                            <>
+                                This deployment has no relay configured. Reminders appear
+                                while the app is open; no server is contacted.
+                            </>
+                        ) : (
+                            <>
+                                Relay availability could not be checked right now. On-device
+                                reminders still work; background delivery is retried when
+                                the relay is reachable.
+                            </>
+                        )}{" "}
+                        Contract and deployment notes:{" "}
                         <code className="rounded bg-muted px-1 py-0.5 font-mono text-[0.85em]">
                             docs/notifications-plan.md
                         </code>
@@ -248,7 +341,42 @@ export function NotificationSettings() {
                                         : "Not requested"}
                         </Badge>
                     </div>
+                    <div className="flex items-center justify-between gap-2 rounded-md border px-3 py-1.5">
+                        <span className="text-muted-foreground">Background delivery</span>
+                        <Badge
+                            variant={
+                                backgroundConnected
+                                    ? "secondary"
+                                    : relay.configured === false
+                                        ? "outline"
+                                        : "outline"
+                            }
+                        >
+                            {backgroundConnected
+                                ? "Connected"
+                                : relay.configured === false
+                                    ? "Not configured"
+                                    : relay.configured === null
+                                        ? "Unknown"
+                                        : "Not connected"}
+                        </Badge>
+                    </div>
+                    <div className="flex items-center justify-between gap-2 rounded-md border px-3 py-1.5">
+                        <span className="text-muted-foreground">Last relay sync</span>
+                        <span className="text-xs tabular-nums">
+                            {enabled && relay.lastSyncedAt
+                                ? new Date(relay.lastSyncedAt).toLocaleString()
+                                : "—"}
+                        </span>
+                    </div>
                 </div>
+
+                {relay.lastError && (
+                    <p className="text-destructive flex items-start gap-2 text-sm" role="alert">
+                        <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden/>
+                        {relay.lastError}
+                    </p>
+                )}
 
                 {!support.supported && support.reason && (
                     <p className="text-destructive flex items-start gap-2 text-sm" role="alert">
@@ -273,7 +401,8 @@ export function NotificationSettings() {
                                 Enabled
                             </Badge>
                             <span className="text-muted-foreground text-xs">
-                                On-device reminders while the app is open.
+                                On-device reminders while the app is open
+                                {backgroundConnected ? " · background push connected" : ""}.
                             </span>
                         </div>
 
@@ -284,12 +413,13 @@ export function NotificationSettings() {
                                 </Label>
                                 <Select
                                     value={String(settings["notifications.leadMinutes"])}
-                                    onValueChange={(value) =>
+                                    onValueChange={(value) => {
                                         void setSetting(
                                             "notifications.leadMinutes",
                                             Number(value) as NotificationLeadMinutes
-                                        )
-                                    }
+                                        );
+                                        requestNotificationSync();
+                                    }}
                                 >
                                     <SelectTrigger
                                         id="notification-lead"
@@ -312,18 +442,23 @@ export function NotificationSettings() {
                                 <span className="text-xs font-medium">Background content</span>
                                 <div className="grid gap-2">
                                     {NOTIFICATION_DETAIL_LEVELS.map((level) => {
-                                        const active = settings["notifications.detailLevel"] === level;
+                                        const selected =
+                                            settings["notifications.detailLevel"] === level;
                                         return (
                                             <button
                                                 key={level}
                                                 type="button"
-                                                aria-pressed={active}
-                                                onClick={() =>
-                                                    void setSetting("notifications.detailLevel", level)
-                                                }
+                                                aria-pressed={selected}
+                                                onClick={() => {
+                                                    void setSetting(
+                                                        "notifications.detailLevel",
+                                                        level
+                                                    );
+                                                    requestNotificationSync({immediate: true});
+                                                }}
                                                 className={cn(
                                                     "flex flex-col items-start gap-0.5 rounded-lg border p-2.5 text-left transition-colors",
-                                                    active
+                                                    selected
                                                         ? "border-ring bg-accent/40"
                                                         : "hover:bg-accent/20"
                                                 )}
@@ -355,6 +490,13 @@ export function NotificationSettings() {
                                     : "No current consent record."}
                             </p>
                             <div className="flex flex-wrap gap-2">
+                                <Button asChild size="sm" variant="outline" className="h-8">
+                                    <Link href="/notifications">
+                                        <BellRing className="size-3.5" aria-hidden/>
+                                        Reminder centre
+                                        <ArrowRight className="size-3" aria-hidden/>
+                                    </Link>
+                                </Button>
                                 <Button
                                     type="button"
                                     size="sm"
@@ -364,7 +506,7 @@ export function NotificationSettings() {
                                     onClick={() => void test()}
                                 >
                                     <Send className="size-3.5" aria-hidden/>
-                                    Send test
+                                    {relayConfigured ? "Send test push" : "Send test"}
                                 </Button>
                                 <Button
                                     type="button"
@@ -379,6 +521,23 @@ export function NotificationSettings() {
                                 </Button>
                             </div>
                         </div>
+
+                        {relayConfigured && !backgroundConnected && (
+                            <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                className="h-8 self-start"
+                                disabled={busy !== null}
+                                onClick={() => void reconnect()}
+                            >
+                                <RefreshCw
+                                    className={cn("size-3.5", relay.syncing && "animate-spin")}
+                                    aria-hidden
+                                />
+                                {busy ?? "Reconnect background delivery"}
+                            </Button>
+                        )}
                         {busy && <p className="text-muted-foreground text-xs">{busy}</p>}
                     </div>
                 ) : (
@@ -401,9 +560,9 @@ export function NotificationSettings() {
                                     className="cursor-pointer text-sm font-medium leading-snug"
                                 >
                                     I understand and agree to the disclosure above, including
-                                    the minimal data sharing that applies if background delivery
-                                    is enabled. I understand this is the only exception to “all
-                                    data stays in this browser”.
+                                    the minimal data sharing that applies if background
+                                    delivery is enabled. I understand this is the only
+                                    exception to “all data stays in this browser”.
                                 </Label>
                             </div>
                         )}
@@ -419,10 +578,17 @@ export function NotificationSettings() {
                                 onClick={() => void enable()}
                             >
                                 <BellRing className="size-4" aria-hidden/>
-                                {busy ?? (enabled ? "Re-confirm & enable" : "Enable notifications")}
+                                {busy ??
+                                    (enabled
+                                        ? "Re-confirm & enable"
+                                        : relayConfigured
+                                            ? "Enable notifications"
+                                            : "Enable on-device reminders")}
                             </Button>
                             <p className="text-muted-foreground text-xs">
-                                Your browser will ask for permission next.
+                                {relayConfigured
+                                    ? "Your browser will ask for permission, then this device connects to the relay."
+                                    : "Your browser will ask for permission. No server is contacted."}
                             </p>
                         </div>
                     </div>

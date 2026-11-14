@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import {usePathname} from "next/navigation";
-import {Activity, CalendarCheck2, ChartSpline, ClipboardList, Menu, Pill, Settings} from "lucide-react";
+import {Activity, BellRing, CalendarCheck2, ChartSpline, ClipboardList, Menu, Pill, Settings} from "lucide-react";
 import {useEffect, useRef, useState} from "react";
 
 import {Button} from "@/components/ui/button";
@@ -10,6 +10,7 @@ import {DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger
 
 const baseLinks = [
     {href: "/schedules", label: "Schedules", icon: CalendarCheck2},
+    {href: "/notifications", label: "Reminders", icon: BellRing},
     {href: "/medications", label: "Medications", icon: Pill},
     {href: "/dose-logs", label: "Dose Log", icon: ClipboardList},
     {href: "/pharmacokinetics", label: "Chart", icon: ChartSpline},

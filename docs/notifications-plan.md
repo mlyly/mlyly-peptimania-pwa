@@ -1,11 +1,17 @@
 # Notifications — server + client implementation plan
 
-Status: **phase 0 implemented** (settings consent, on-device reminders, service-worker
-display handlers). Phases 1–3 are planned below.
+Status: **phases 0–2 implemented** (consent, on-device reminders, embedded Web Push relay,
+generic + end-to-end encrypted detailed delivery, notification centre, sync lifecycle,
+service-worker decryption). Phase 3 remains optional/deferred.
 
-The app is a static export (`output: "export"`), so it cannot host API routes. Background
-notifications therefore need a **separate relay service**. This document defines that
-service, the client protocol, the privacy contract and the rollout.
+The app is now a normal Next.js server build. User data still lives entirely in the browser;
+the server runtime exists only for the optional relay, which is served from the same
+application under `/v1/*` and stores state in a file-based SQLite database
+(`node:sqlite`) on a persistent volume. `NEXT_PUBLIC_NOTIFICATION_RELAY_URL` may point the
+client at a separately hosted relay, but it defaults to the same origin.
+
+This document defines the relay, the client protocol, the privacy contract, the deployment
+and the rollout.
 
 ---
 
@@ -80,57 +86,62 @@ counts) for the shortest period needed to operate the service.
 ## 3. Architecture
 
 ```
-┌──────────────────────────────┐
-│ Peptimania PWA (static)      │
-│                              │
-│ IndexedDB: meds, schedules,  │
-│ logs, settings, push key     │
-│                              │
-│ lib/notifications            │
-│  - consent / capability      │
-│  - subscription lifecycle    │
-│  - reminder expansion        │
-└──────────────┬───────────────┘
-               │ HTTPS (subscribe / sync / delete)
-               ▼
-┌──────────────────────────────┐
-│ Notification relay           │
-│                              │
-│  API (Hono/Fastify)          │
-│  Postgres/SQLite             │
-│  VAPID keys (secret)         │
-│  cron tick every minute      │
-└──────────────┬───────────────┘
-               │ Web Push (RFC 8291/8292)
-               ▼
-┌──────────────────────────────┐
-│ Browser push service         │
-│ (FCM / APNs / Mozilla)       │
-└──────────────┬───────────────┘
-               ▼
-┌──────────────────────────────┐
-│ Service worker `push` event  │
-│ → showNotification           │
-│ → click focuses/opens app    │
-└──────────────────────────────┘
+┌──────────────────────────────────────────────┐
+│ Browser (Peptimania PWA)                     │
+│                                              │
+│ IndexedDB `peptimania`: meds, schedules,     │
+│ logs, settings                               │
+│ IndexedDB `peptimania-notifications`:        │
+│ relay token + AES-GCM key (never exported)   │
+│                                              │
+│ lib/notifications                            │
+│  - consent / capability                      │
+│  - subscription + sync lifecycle             │
+│  - reminder expansion / encryption           │
+└───────────────────┬──────────────────────────┘
+                    │ HTTPS (config / subscribe / sync / delete)
+                    ▼
+┌──────────────────────────────────────────────┐
+│ Next.js server — same deployment             │
+│                                              │
+│  app/v1/[...path]/route.ts                   │
+│  lib/server/notifications                    │
+│  SQLite file on a persistent volume          │
+│  VAPID keys (server env only)                │
+│  in-process tick every minute                │
+└───────────────────┬──────────────────────────┘
+                    │ Web Push (RFC 8291/8292)
+                    ▼
+┌──────────────────────────────────────────────┐
+│ Browser push service                         │
+│ (FCM / APNs / Mozilla)                       │
+└───────────────────┬──────────────────────────┘
+                    ▼
+┌──────────────────────────────────────────────┐
+│ Service worker `push` event                  │
+│ → decrypt (detailed) or generic fallback     │
+│ → showNotification                           │
+│ → click focuses/opens `/notifications`       │
+└──────────────────────────────────────────────┘
 ```
 
-### Recommended server stack
+### Server stack
 
-| Option                                             | Fit             | Notes                                                                                         |
-|----------------------------------------------------|-----------------|-----------------------------------------------------------------------------------------------|
-| **Node 26 + Hono/Fastify + Postgres + `web-push`** | **Recommended** | Simple Web Push support, easy cron, portable. Deploy on Fly.io, Render or Railway.            |
-| Cloudflare Worker + D1 + Cron Triggers             | Good            | Cheap, global, but needs a Worker-compatible Web Push implementation and careful crypto code. |
-| Supabase Edge Functions + pg_cron                  | Possible        | More moving parts; reuse Postgres.                                                            |
+| Choice                | Why                                                                        |
+|-----------------------|----------------------------------------------------------------------------|
+| Next.js route handler | Runs in the same app/image; no second deployable, no public relay base URL |
+| `node:sqlite`         | One file, no native module, no database service; fits a single Dokploy app |
+| `web-push`            | RFC 8291/8292 Web Push + VAPID                                             |
+| In-process scheduler  | Dokploy runs a long-lived Node server; no external cron required           |
 
-The relay is a separate deployable (e.g. `notifications-server/` or its own repo). It must
-not be served from the static app's host, because the app has no server runtime.
+The SQLite claim/lease logic is safe if more than one container shares the same volume, but
+SQLite should stay on a single writer volume (do not run replicas against a network FS).
 
 ---
 
 ## 4. Server data model
 
-Postgres example (SQLite equivalents are fine):
+The implementation uses SQLite (`lib/server/notifications/db.ts`). The equivalent schema is:
 
 ```sql
 create table push_subscriptions
@@ -155,7 +166,7 @@ create table reminders
     subscription_id    uuid        not null references push_subscriptions (id) on delete cascade,
     occurrence_key     text        not null,                   -- stable client key: scheduleId@YYYY-MM-DD
     due_at             timestamptz not null,
-    status             text        not null default 'pending', -- pending | sent | failed | expired
+    status     text not null default 'pending',                -- pending | sending | sent | failed | expired
     -- Generic mode: null (server builds the generic text).
     -- Detailed mode: opaque AES-GCM ciphertext; the relay cannot read it.
     payload_ciphertext text,
@@ -164,10 +175,13 @@ create table reminders
     attempts           integer     not null default 0,
     last_error         text,
     expires_at         timestamptz not null,
+    retry_at   timestamptz,                                    -- backoff for transient failures
+    claimed_at timestamptz,                                    -- 5-minute sending lease
     unique (subscription_id, occurrence_key)
 );
 
-create index reminders_due_idx on reminders (due_at) where status = 'pending';
+create index reminders_due_idx on reminders (status, due_at);
+create index reminders_subscription_idx on reminders (subscription_id);
 ```
 
 Notes:
@@ -175,15 +189,44 @@ Notes:
 - `endpoint` and keys are the minimum needed to call the push service.
 - No medication table, no dose log table, no measurement table.
 - `occurrence_key` gives idempotency: re-syncing the same day's reminder does not duplicate.
-- `expires_at` (e.g. 30 days after the occurrence) lets a cron prune abandoned rows.
-- Keep `last_error` short and content-free (e.g. `410 gone`, `429 rate limited`).
+- `expires_at` (30 days after the occurrence) lets a cron prune abandoned rows.
+- `claimed_at` + `status = 'sending'` prevents duplicate sends. Stale leases (older than
+  5 minutes) are released on the next tick.
+- `retry_at` provides exponential backoff between attempts (max 5, then `failed`).
+- Keep `last_error` short and content-free (e.g. `http-410`, `http-429`, `retry`).
+- The database runs in WAL mode with `busy_timeout = 5000` and foreign keys enabled.
+  `NOTIFICATIONS_DB_PATH` selects the file (default `.data/notifications.sqlite`).
 
 ---
 
 ## 5. API contract
 
 All endpoints are HTTPS + JSON. Authentication for updates/deletes is a random bearer token
-returned once at registration; only its SHA-256 hash is stored.
+returned once at registration; only its SHA-256 hash is stored. The embedded relay is
+mounted at `/v1/*`; a separately hosted relay must expose the same paths.
+
+### `GET /v1/config`
+
+Public, no authentication. The client reads this before subscribing:
+
+```json
+{
+  "configured": true,
+  "vapidPublicKey": "B…",
+  "maxReminders": 1000,
+  "horizonDays": 30,
+  "detailLevels": [
+    "generic",
+    "detailed"
+  ],
+  "schedulerEnabled": true,
+  "version": 1
+}
+```
+
+`configured: false` (and a `null` public key) means the deployment has no VAPID keys. The
+app then keeps on-device reminders only and never contacts the relay. The VAPID **private**
+key is never part of this response or the client bundle.
 
 ### `POST /v1/subscriptions`
 
@@ -219,6 +262,14 @@ Create or upsert a subscription. Rate limit by IP. No account required.
     {
       "occurrenceKey": "sched-1@2026-11-16",
       "dueAt": "2026-11-16T08:00:00.000Z"
+    },
+    {
+      "occurrenceKey": "sched-1@2026-11-17",
+      "dueAt": "2026-11-17T08:00:00.000Z",
+      "encryptedPayload": {
+        "iv": "base64url-12-byte-nonce",
+        "ct": "base64url-aes-gcm-ciphertext"
+      }
     }
   ]
 }
@@ -237,29 +288,36 @@ Response `201`:
 
 Replace timezone, preferences and the pending reminder horizon. Send every current future
 occurrence (idempotent by `occurrenceKey`); the server deletes pending rows for the
-subscription that are not in the payload and are still in the future.
+subscription that are not in the payload and are still in the future. A different push
+endpoint for the same subscription id returns `409`, which tells the client to create a new
+subscription.
 
 ### `DELETE /v1/subscriptions/:id`
 
-Revoke the token, delete reminder rows (cascade), and mark the subscription deleted. Return
-`204`. This is what "Turn off" calls after `pushManager.unsubscribe()`.
+Revoke the token, delete reminder rows (cascade), and keep a tombstone so a repeated DELETE
+is idempotent. Return `204`. This is what "Turn off" and "wipe" call before unsubscribing
+the browser.
 
 ### `POST /v1/subscriptions/:id/test`
 
-Send one generic test push (`"Notifications are working."`). Useful for the Settings "Send
-test" button once the relay is live. Rate limit: 3 per hour.
+Send one generic test push (`"Peptimania test notification"`). Used by the Settings "Send
+test push" button. Rate limit: 3 per hour per subscription, 10 per hour per IP.
 
 ### `GET /v1/health`
 
-Liveness only; no user data.
+Liveness only; no user data. Returns `200` when the SQLite handle is readable and `503`
+otherwise.
 
-### Authentication
+### Authentication and abuse limits
 
 ```
 Authorization: Bearer <token>
 ```
 
-Reject mismatched token hashes with `401`. Use constant-time comparison.
+Reject mismatched token hashes with `401`. Use constant-time comparison. Registration is
+rate-limited by IP; sync, test and delete by subscription/IP. Request bodies are capped at
+1 MiB and validated with Zod. Mutation requests from an `Origin` other than the app's own
+must be allowlisted via `NOTIFICATIONS_ALLOWED_ORIGINS`.
 
 ---
 
@@ -267,13 +325,18 @@ Reject mismatched token hashes with `401`. Use constant-time comparison.
 
 ### 6.1 Client → relay horizon
 
-The client already has the occurrence engine (`lib/scheduling/occurrences.ts`). On each sync:
+The client already has the occurrence engine (`lib/scheduling/occurrences.ts`). On each sync
+(`lib/notifications/relay.ts`):
 
-1. Expand active schedules for the next **14–30 days** with `expandSchedules`.
+1. Expand active schedules over the server-advertised horizon (default **30 days**,
+   `NOTIFICATIONS_HORIZON_DAYS`) with `rangeAgenda`.
 2. Subtract the lead time (`notifications.leadMinutes`) from each `scheduledAt`.
-3. Drop occurrences that are already logged (`matchingDoseLog`).
-4. Send concrete UTC instants (`dueAt`) — **not** recurrence rules.
-5. Cap the payload (e.g. 1,000 reminders) and chunk if needed.
+3. Apply notification-centre overrides: skip `skippedAt`, replace the instant with
+   `snoozeUntil`, and include occurrences only from ~15 minutes in the past onward.
+4. Drop occurrences that are already logged (`status === "done"`).
+5. Send concrete UTC instants (`dueAt`) — **not** recurrence rules.
+6. Cap the payload at `NOTIFICATIONS_MAX_REMINDERS` (default 1,000).
+7. In detailed mode, encrypt `{title, body}` per reminder and send only `{iv, ct}`.
 
 Why concrete instants:
 
@@ -285,20 +348,24 @@ Tradeoff: if the app is not opened for the whole horizon, reminders run out. Pha
 server-side recurrence expansion (store schedule rule fields, still without medication
 names) or a longer horizon.
 
-### 6.2 Cron tick
+### 6.2 Delivery tick
 
-Run every minute (platform scheduler or a small always-on worker):
+`instrumentation.ts` starts the in-process scheduler (`NOTIFICATIONS_SCHEDULER=1`, default).
+It runs every 60 seconds (`NOTIFICATIONS_SCHEDULER_INTERVAL_MS`) and once ~5 seconds after
+boot to catch up after a restart. Each tick:
 
-1. Claim due rows with `FOR UPDATE SKIP LOCKED` (or a single-writer lease).
-2. For each, call `web-push.sendNotification` with the stored subscription and a generic
-   payload, or the opaque encrypted payload for detailed mode.
-3. Mark `sent` / `failed`, increment `attempts`, store a content-free error.
-4. On `404` / `410`, mark the subscription revoked and delete its reminders.
-5. On `429` / `5xx`, retry with exponential backoff (max ~5 attempts, then `failed`).
-6. Prune `sent` rows after 7 days and `expired` rows after their `expires_at`.
+1. Releases stale `sending` leases and claims due rows inside one `BEGIN IMMEDIATE`
+   transaction (single-writer claim + 5-minute lease).
+2. For each, calls `web-push.sendNotification` with the stored subscription and either the
+   generic payload or the opaque encrypted payload.
+3. Marks `sent`, or schedules a retry with exponential backoff (max 5 attempts, then
+   `failed`), storing a content-free error code.
+4. On `404` / `410`, revokes the subscription and deletes its reminders.
+5. Periodically prunes expired/sent reminders (7 days) and revoked subscriptions (90 days).
 
 At-least-once delivery is acceptable; the notification `tag` (`dose-<occurrenceKey>`)
-replaces duplicates on the device.
+replaces duplicates on the device. Set `NOTIFICATIONS_SCHEDULER=0` when an external
+scheduler drives the same database instead.
 
 ### 6.3 Client sync triggers
 
@@ -368,7 +435,7 @@ export async function tick() {
                     type: "dose-due",
                     enc: {alg: "A256GCM", iv: reminder.payloadIv, ct: reminder.payloadCiphertext},
                     tag: `dose-${reminder.occurrenceKey}`,
-                    url: `/?focus=${encodeURIComponent(reminder.occurrenceKey)}`,
+                    url: `/notifications?focus=${encodeURIComponent(reminder.occurrenceKey)}`,
                 })
                 : JSON.stringify({
                     v: 1,
@@ -376,7 +443,7 @@ export async function tick() {
                     title: "Dose due",
                     body: "A scheduled dose is due.",
                     tag: `dose-${reminder.occurrenceKey}`,
-                    url: `/?focus=${encodeURIComponent(reminder.occurrenceKey)}`,
+                    url: `/notifications?focus=${encodeURIComponent(reminder.occurrenceKey)}`,
                 });
 
             await webpush.sendNotification(reminder.pushSubscription, payload);
@@ -447,7 +514,7 @@ async function syncNotifications(settings: AppSettings) {
   "title": "Dose due",
   "body": "A scheduled dose is due.",
   "tag": "dose-sched-1@2026-11-15",
-  "url": "/?focus=sched-1@2026-11-15"
+  "url": "/notifications?focus=sched-1@2026-11-15"
 }
 ```
 
@@ -465,7 +532,7 @@ The relay builds this text itself; it never knows which medication it belongs to
     "ct": "base64url…"
   },
   "tag": "dose-sched-1@2026-11-15",
-  "url": "/?focus=sched-1@2026-11-15"
+  "url": "/notifications?focus=sched-1@2026-11-15"
 }
 ```
 
@@ -492,72 +559,86 @@ The service worker:
 - `icon` / `badge` use `/icons/icon-192.png`.
 - `data.url` is same-origin only; `notificationclick` focuses an existing window or opens a
   new one at that URL.
-- Clicking a dose reminder should land on the dashboard/schedules and highlight the
-  occurrence (`?focus=<occurrenceKey>`).
+- Clicking a dose reminder lands on the notification centre and highlights the occurrence
+  (`/notifications?focus=<occurrenceKey>`).
 
-The `push` and `notificationclick` handlers are already added to `app/sw.ts`. Phase 2 adds
-decryption and `pushsubscriptionchange`.
+`app/sw.ts` implements `push` (with detailed-payload decryption and generic fallback),
+`notificationclick` (same-origin focus/open) and `pushsubscriptionchange` (asks an open page
+to re-subscribe and re-sync).
 
 ---
 
-## 8. Client implementation plan
+## 8. Implemented modules
 
-### Already in place (phase 0)
+### Client (browser)
 
 - `lib/notifications/consent.ts` — disclosure text, version, consent validation.
 - `lib/notifications/capabilities.ts` — support, permission, iOS/install detection.
-- `lib/settings/definitions.ts` — `notifications.*` settings (no schema bump; `settings` is
-  generic and export/import already includes it).
-- `components/settings/notification-settings.tsx` — disclosure, checkbox, permission
-  request, enable/disable, lead time, detail level, test notification.
-- `components/notifications/dose-reminder-watcher.tsx` — while the app is open, checks the
-  local schedule every 30 s and shows a toast (visible) or a system notification (hidden).
-- `app/sw.ts` — `push` display + `notificationclick` handlers.
+- `lib/notifications/relay.ts` — runtime config, push subscription lifecycle, horizon sync,
+  test push, status store and disable/unsubscribe.
+- `lib/notifications/storage.ts` — non-exported IndexedDB (`peptimania-notifications`) for
+  relay credentials and the AES-GCM detail key.
+- `lib/notifications/detail-crypto.ts` / `base64.ts` — AES-256-GCM encryption and base64url.
+- `lib/notifications/sync-events.ts` — dynamic, no-op-safe trigger used by domain services.
+- `components/notifications/notification-sync.tsx` — boot/visibility/online/subscription-
+  change triggers.
+- `components/notifications/notification-centre.tsx` + `app/notifications/page.tsx` — due,
+  upcoming and recently logged occurrences with Log / Snooze 15m / Skip / Restore.
+- `components/notifications/due-banner.tsx` — dashboard due/overdue banner.
+- `components/settings/notification-settings.tsx` — staged disclosure, permission, connect /
+  reconnect / disable, lead time, generic vs detailed, test push, relay status.
+- `components/notifications/dose-reminder-watcher.tsx` — on-device reminders while the app is
+  open; honours snooze/skip overrides and links to the reminder centre.
+- `app/sw.ts` — encrypted detailed payloads with generic fallback, same-origin click target,
+  `pushsubscriptionchange` notification to open pages.
 
-### Phase 1 — relay + generic push
+### Client data (`settings`, exportable)
 
-Add `lib/notifications/subscription.ts`:
+- `notifications.enabled`, `notifications.consentAt`, `notifications.consentVersion`,
+  `notifications.detailLevel`, `notifications.leadMinutes`.
+- `notifications.overrides` — per-occurrence `snoozeUntil` / `skippedAt` (phase 2; additive,
+  no Dexie schema change).
+- Secrets are **not** settings: relay token, subscription id and AES key live only in
+  `peptimania-notifications` and are erased by wipe.
 
-- Convert the VAPID public key (base64url) to `Uint8Array`.
-- `navigator.serviceWorker.ready` → `pushManager.subscribe({userVisibleOnly: true,
-  applicationServerKey})`.
-- `POST /v1/subscriptions` with the subscription, timezone, preferences and reminders.
-- Persist `{subscriptionId, token, endpoint}` in a **non-exported** local store (dedicated
-  IndexedDB store or localStorage; never the exported `settings` table).
-- `DELETE` + `pushManager.unsubscribe()` on disable/wipe.
-- Re-sync on `pushsubscriptionchange`.
+### Server (`lib/server/notifications`, `app/v1/[...path]/route.ts`)
 
-Configuration:
+- `config.ts` — env parsing (VAPID, DB path, limits, retention, scheduler).
+- `db.ts` — `node:sqlite` schema, token hashing, reminder replacement, claim/lease, retry,
+  revocation, pruning.
+- `schemas.ts` — Zod request validation.
+- `auth.ts` / `cors.ts` / `rate-limit.ts` — bearer auth, origin allowlist, fixed-window limits.
+- `push.ts` — `web-push` delivery, generic + detailed payloads, gone/retry classification.
+- `service.ts` — create/update/delete/test, horizon sanitising, one delivery tick.
+- `scheduler.ts` + `instrumentation.ts` — in-process minute timer.
 
-```
-NEXT_PUBLIC_NOTIFICATION_RELAY_URL=https://notify.example.com
-NEXT_PUBLIC_VAPID_PUBLIC_KEY=<base64url public key>
-```
+### Configuration
 
-Keep the feature visible but disabled when either variable is missing, with a clear
-"Background delivery is not configured in this build" state. The app must remain fully
-functional without the relay.
+| Variable                                    | Default                          | Purpose                                          |
+|---------------------------------------------|----------------------------------|--------------------------------------------------|
+| `VAPID_PUBLIC_KEY`                          | —                                | Enables the relay; exposed via `/v1/config`      |
+| `VAPID_PRIVATE_KEY`                         | —                                | Server-only signing key                          |
+| `VAPID_SUBJECT`                             | `mailto:notifications@localhost` | Web Push contact (`mailto:` / `https:`)          |
+| `NOTIFICATIONS_DB_PATH`                     | `.data/notifications.sqlite`     | SQLite file (Dokploy: `/data/...`)               |
+| `NOTIFICATIONS_ALLOWED_ORIGINS`             | —                                | Extra origins allowed to call mutation endpoints |
+| `NOTIFICATIONS_SCHEDULER`                   | `1`                              | In-process delivery timer                        |
+| `NOTIFICATIONS_SCHEDULER_INTERVAL_MS`       | `60000`                          | Tick interval (10s–1h)                           |
+| `NOTIFICATIONS_MAX_REMINDERS`               | `1000`                           | Sync cap                                         |
+| `NOTIFICATIONS_HORIZON_DAYS`                | `30`                             | Horizon advertised to clients                    |
+| `NOTIFICATIONS_SUBSCRIPTION_RETENTION_DAYS` | `90`                             | Revoked-subscription tombstone retention         |
+| `NOTIFICATIONS_SENT_RETENTION_DAYS`         | `7`                              | Delivered-reminder retention                     |
+| `NEXT_PUBLIC_NOTIFICATION_RELAY_URL`        | same origin                      | Optional external relay base URL                 |
 
-### Phase 2 — encrypted details + notification centre
+Without VAPID keys the app builds and runs normally: `/v1/config` returns
+`configured: false`, Settings explains that background delivery is unavailable, and only
+on-device reminders are offered. The VAPID private key is never a `NEXT_PUBLIC_*` variable
+and is never included in the client bundle.
 
-- AES-GCM key generation/storage in a non-exported IndexedDB store.
-- Encrypt detailed reminders client-side; decrypt in the service worker.
-- Add an in-app **notification centre** page (local only) that lists recent and upcoming
-  occurrences, with "Log dose", "Snooze 15 min" and "Skip today" actions. All actions write
-  to the local DB; nothing is sent to the relay except the updated reminder horizon.
-- Add a dashboard banner for due/overdue doses when notifications are enabled.
-- Handle `?focus=<occurrenceKey>` on the dashboard/schedules.
+### Phase 3 — optional / deferred
 
-### Phase 3 — server-side recurrence and richer actions
-
-- Let the relay expand recurring schedule rules for users who don't open the app for weeks.
-  Store only the cadence fields needed (`timeOfDay`, weekdays, interval, cycle, timezone),
-  never medication names.
-- Optional notification action buttons (`Log dose`, `Snooze`) that open the app with a
-  query parameter; the API is not called from the notification action directly.
-- Long-horizon sync and “last synced” indicator in Settings.
-
----
+- Server-side recurrence expansion for users who do not open the app for weeks.
+- Notification action buttons (Log / Snooze) that open the app with a query parameter.
+- Long-horizon sync and richer operational dashboards (aggregate counts only).
 
 ## 9. UX states
 
@@ -627,27 +708,59 @@ label, statuses use `role="alert"` for errors, and the enable button is a real u
 
 ---
 
-## 12. Rollout
+## 12. Rollout status
 
-1. **Phase 0 (this change):** consent UI + on-device reminders + SW display handlers. No
-   server calls. Ship behind the existing default-off setting.
-2. **Phase 1:** deploy relay with generic push, VAPID keys, cron, deletion endpoint. Enable
-   via build env. Monitor delivery failures and 410 rate.
-3. **Phase 2:** encrypted detailed mode and in-app notification centre. Keep generic as the
-   default.
-4. **Phase 3:** long-horizon recurrence, snooze/actions, operational dashboards (aggregate
-   counts only).
+1. **Phase 0 — done:** consent UI, on-device reminders, service-worker display handlers.
+2. **Phase 1 — done:** embedded relay, VAPID keys (server-side only), generic push,
+   subscription lifecycle, deletion endpoint, in-process delivery tick.
+3. **Phase 2 — done:** end-to-end encrypted detailed mode, notification centre, dashboard
+   banner, snooze/skip overrides, sync lifecycle, encrypted SW decryption.
+4. **Phase 3 — optional/deferred:** server-side recurrence, notification actions, operational
+   dashboards.
 
-Each phase must preserve: app works offline, app works with notifications off, no user data
-in server logs, and one-tap disable.
+Every phase preserves: the app works offline, the app works with notifications off, no
+medication data in server logs, and one-tap disable.
 
 ---
 
-## 13. Open decisions
+## 13. Deployment (Dokploy)
 
-- Relay hosting: Fly.io/Render (Node) vs Cloudflare Worker + D1.
-- Generic-only first launch vs detailed encrypted mode in phase 1.
-- Sync horizon (14 vs 30 days) and whether to add server-side recurrence sooner.
-- Whether the notification centre is a new route or a dashboard sheet.
-- Retention windows for subscription and delivery records.
-- Re-consent cadence (current plan: only when the disclosure version changes).
+The app is a single Node container; the relay is part of it.
+
+1. Create an application from this repository (Dockerfile build) and expose port `3000`.
+2. Add a **persistent volume** mounted at `/data` (owned by uid `1000` / the `node` user if
+   using a host bind mount). The SQLite file, WAL and SHM files live there.
+3. Set the environment variables:
+    - `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` (from `npm run vapid:generate`),
+    - `VAPID_SUBJECT=mailto:you@example.com`,
+    - `NOTIFICATIONS_DB_PATH=/data/notifications.sqlite` (already the Docker default).
+4. Configure the health check as `GET /v1/health` (the image also has a Docker
+   `HEALTHCHECK`).
+5. Serve the app over HTTPS. Web Push requires a secure context; installed iOS PWAs also
+   require HTTPS.
+
+The image runs `node:26-bookworm-slim`, builds with `npm run build` and starts with
+`next start`. Serwist writes `public/sw.js` after `next build`; the Docker image copies the
+built `public/` and `.next/` into the runtime stage.
+
+Local equivalent:
+
+```bash
+cp .env.example .env.local   # fill VAPID keys; use .data/ for the DB
+npm run build
+npm start                    # http://localhost:3000
+```
+
+Back up `/data/notifications.sqlite` if you want to preserve subscriptions across a
+migration. Losing it only forces devices to re-subscribe on their next sync; it contains no
+medication or dose history.
+
+---
+
+## 14. Open decisions
+
+- Whether to add server-side recurrence expansion (phase 3) before the 30-day horizon
+  becomes a problem for users who rarely open the app.
+- Notification action buttons (Log / Snooze) and their deep-link contract.
+- External scheduler vs the in-process timer for multi-instance deployments.
+- Re-consent cadence (current: only when the disclosure version changes).

@@ -6,14 +6,16 @@ A privacy-first, offline-capable Progressive Web Application (PWA) built with Ne
 components. The application tracks medications/peptides, inventory, scheduling, dose logs, pharmacokinetic concentration
 models, reconstitutions, and customizable body metrics.
 
-All data resides strictly in browser local storage (e.g., IndexedDB / LocalStorage). No data is transmitted to external
-servers.
+All application data resides strictly in browser local storage (e.g., IndexedDB / LocalStorage). No data is transmitted
+to external servers. The only exception is the optional, explicitly opted-in Web Push relay (see §4.4), which stores
+push endpoints and reminder timestamps in a server-side SQLite file — never medication history.
 
 ---
 
 ## 1. Tech Stack & Architecture
 
-- **Framework**: Next.js (App Router, Static Export `output: 'export'`)
+- **Framework**: Next.js (App Router, server build — `next start`). The app is local-first but no longer a static
+  export, because the optional notification relay runs as a route handler in the same deployment.
   NOTE: This is NOT the Next.js you know, breaking changes — APIs, conventions, and file structure may all
   differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/`
   (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root)
@@ -231,6 +233,38 @@ Standardize calculation units internally to base units (`mg` or standard SI unit
   $$\text{Dose Volume (mL)} = \frac{\text{Desired Dose}}{\text{Vial Quantity}} \times \text{BAC Water (mL)}$$
 - Standard U-100 syringe visualizer context where $1\text{ mL} = 100\text{ units}$.
 
+### 4.4 Optional Web Push relay
+
+Background dose reminders are the only optional feature that leaves the device, and they are off until the user accepts
+the versioned notification disclosure.
+
+- **Same deployment**: the relay is implemented in `app/v1/[...path]/route.ts` and
+  `lib/server/notifications/*`; there is no separate service.
+- **Storage**: `node:sqlite` (`DatabaseSync`) with a single file selected by `NOTIFICATIONS_DB_PATH`
+  (local default `.data/notifications.sqlite`; Dokploy uses `/data/notifications.sqlite` on a persistent volume).
+  Tables:
+  `push_subscriptions` and `reminders`. No medication, schedule, dose-log or measurement tables.
+- **Secrets**: VAPID keys come from server env (`VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`); only the
+  public key is exposed through `GET /v1/config`. The relay bearer token and the detailed-mode AES-GCM key live in the
+  non-exported IndexedDB database `peptimania-notifications`; they are never part of an export and are removed by a
+  wipe.
+- **Content modes**: generic (default) sends only “a dose is due”. Detailed mode encrypts
+  `{title, body}` in the browser and sends `{iv, ct}`; the service worker decrypts it and falls back to generic text on
+  failure.
+- **Delivery**: `instrumentation.ts` starts an in-process minute timer; `db.claimDueReminders` uses a `BEGIN IMMEDIATE`
+  transaction plus a 5-minute `sending` lease, with `retry_at` backoff (max 5 attempts) and `404`/`410` revocation.
+- **Client sync**: `lib/notifications/relay.ts` syncs a 30-day (configurable) horizon of concrete UTC instants, capped
+  at
+  1,000, after boot, visibility, schedule/dose-log writes, settings changes, import/replace, reconnect and
+  `pushsubscriptionchange`. It is a no-op when reminders are off, consent is stale or the relay is unconfigured.
+- **Notification centre**: `/notifications` lists due/upcoming/recent occurrences with Log, Snooze 15m, Skip and
+  Restore;
+  overrides are stored exportably in `notifications.overrides`. The dashboard shows a due/overdue banner when enabled.
+- **Deployment**: Docker/Dokploy runs `npm run build` (Next build + Serwist) and `next start`; `GET /v1/health` is the
+  health probe. Web Push requires HTTPS (and an installed PWA on iOS).
+
+Full contract and operations: `docs/notifications-plan.md`. Environment template: `.env.example`.
+
 ---
 
 ## 5. UI/UX Design System
@@ -248,7 +282,7 @@ Standardize calculation units internally to base units (`mg` or standard SI unit
 ## 6. Development Workflow Guidelines
 
 1. **Components First**: Maintain strict modularity using standard `shadcn/ui` primitives.
-2. **Offline Testing**: Ensure service workers properly cache all static bundle assets (`next export`).
+2. **Offline Testing**: Ensure service workers properly cache all app assets (`next build` + Serwist configurator).
 3. **Data Protection**: Prompt confirmation on bulk operations or schema upgrades; auto-backup generation before
    migrations.
 

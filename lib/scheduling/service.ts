@@ -10,6 +10,7 @@
  * `lib/medications/service.ts`).
  */
 import {db, type DoseLog, type Schedule} from "@/lib/db";
+import {requestNotificationSync} from "@/lib/notifications/sync-events";
 
 import {
     canonicalScheduleInput,
@@ -70,6 +71,7 @@ export async function createSchedule(input: ScheduleInput): Promise<Schedule> {
         active: parsed.active,
     };
     await db.schedules.put(schedule);
+    requestNotificationSync();
     return schedule;
 }
 
@@ -98,6 +100,7 @@ export async function updateSchedule(id: string, input: ScheduleInput): Promise<
         active: parsed.active,
     };
     await db.schedules.put(schedule);
+    requestNotificationSync();
     return schedule;
 }
 
@@ -107,6 +110,7 @@ export async function setScheduleActive(id: string, active: boolean): Promise<Sc
     if (!existing) throw new Error("Schedule not found — it may have been deleted.");
     const updated: Schedule = {...existing, active};
     await db.schedules.put(updated);
+    requestNotificationSync();
     return updated;
 }
 
@@ -116,6 +120,7 @@ export async function setScheduleActive(id: string, active: boolean): Promise<Sc
  */
 export async function deleteSchedule(id: string): Promise<void> {
     await db.schedules.delete(id);
+    requestNotificationSync();
 }
 
 // ---------------------------------------------------------------------------
@@ -151,6 +156,7 @@ export async function logDose(input: DoseLogInput): Promise<DoseLog> {
         notes: parsed.notes?.trim() || undefined,
     };
     await db.doseLogs.add(log);
+    requestNotificationSync();
     return log;
 }
 
@@ -176,12 +182,14 @@ export async function updateDoseLog(id: string, input: DoseLogUpdateInput): Prom
         notes: parsed.notes?.trim() || undefined,
     };
     await db.doseLogs.put(log);
+    requestNotificationSync();
     return log;
 }
 
 /** Removes a dose log record (undo). Nothing else is touched. */
 export async function deleteDoseLog(id: string): Promise<void> {
     await db.doseLogs.delete(id);
+    requestNotificationSync();
 }
 
 /**
@@ -194,8 +202,8 @@ export async function logDoses(
 ): Promise<DoseLog[]> {
     if (inputs.length === 0) return [];
     const timestamp = timestampIso ?? nowIso();
-    return db.transaction("rw", db.doseLogs, async () => {
-        const logs: DoseLog[] = [];
+    const logs = await db.transaction("rw", db.doseLogs, async () => {
+        const created: DoseLog[] = [];
         for (const input of inputs) {
             const parsed = doseLogInputSchema.parse(input);
             const log: DoseLog = {
@@ -210,8 +218,10 @@ export async function logDoses(
                 notes: parsed.notes?.trim() || undefined,
             };
             await db.doseLogs.add(log);
-            logs.push(log);
+            created.push(log);
         }
-        return logs;
+        return created;
     });
+    requestNotificationSync();
+    return logs;
 }

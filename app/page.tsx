@@ -1,5 +1,6 @@
 import {HomeNav} from "@/components/app/home-nav";
 import {DashboardChecklist} from "@/components/scheduling/dashboard-checklist";
+import {NotificationDueBanner} from "@/components/notifications/due-banner";
 
 export default function Home() {
   return (
@@ -18,6 +19,7 @@ export default function Home() {
           </header>
 
           <main className="flex w-full max-w-3xl flex-col gap-4">
+              <NotificationDueBanner/>
               {/* Live "Today's Doses" checklist (Quick Log) — the dashboard's
                   working module. Boots the local DB itself. */}
               <DashboardChecklist manageHref="/schedules"/>
