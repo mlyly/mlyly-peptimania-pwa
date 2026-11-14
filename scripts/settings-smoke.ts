@@ -111,6 +111,47 @@ async function main() {
         (await getSetting("pk.chartUnit")) === DEFAULT_SETTINGS["pk.chartUnit"]
     );
 
+    // 7. Notifications are off by default; reset turns reminders off but keeps
+    // the versioned consent acknowledgement (it is not a UI preference).
+    check(
+        "notifications default off",
+        (await getSetting("notifications.enabled")) === false
+    );
+    check(
+        "notification consent default absent",
+        (await getSetting("notifications.consentAt")) === null
+    );
+    await setSetting("notifications.enabled", true);
+    await setSetting("notifications.consentAt", "2026-11-14T10:00:00.000Z");
+    await setSetting("notifications.consentVersion", "2026-11-14");
+    await setSetting("notifications.leadMinutes", 15);
+    await setSetting("notifications.detailLevel", "detailed");
+    await resetAllSettings();
+    check(
+        "reset disables notifications",
+        (await getSetting("notifications.enabled")) === false
+    );
+    check(
+        "reset preserves consent",
+        (await getSetting("notifications.consentAt")) === "2026-11-14T10:00:00.000Z" &&
+        (await getSetting("notifications.consentVersion")) === "2026-11-14"
+    );
+    check(
+        "reset restores notification preferences",
+        (await getSetting("notifications.leadMinutes")) === 0 &&
+        (await getSetting("notifications.detailLevel")) === "generic"
+    );
+
+    // 8. Invalid notification values fall back to defaults without throwing.
+    await db.settings.put({key: "notifications.leadMinutes", value: 7});
+    await db.settings.put({key: "notifications.detailLevel", value: "verbose"});
+    const notificationDefaults = await loadSettings();
+    check(
+        "invalid notification values fall back",
+        notificationDefaults["notifications.leadMinutes"] === 0 &&
+        notificationDefaults["notifications.detailLevel"] === "generic"
+    );
+
     if (failed) {
         console.error("\nSmoke test FAILED");
         process.exit(1);

@@ -5,11 +5,12 @@ import {HomeNav} from "@/components/app/home-nav";
 import {StorageStatus} from "@/components/app/storage-status";
 import {ChartSettings} from "@/components/settings/chart-settings";
 import {DataManagement} from "@/components/settings/data-management";
+import {NotificationSettings} from "@/components/settings/notification-settings";
 
 export const metadata: Metadata = {
     title: "Settings",
     description:
-        "Privacy and data management — export, import or wipe all locally stored data. 100% client-side.",
+        "Privacy and data management — export, import or wipe all locally stored data. Local-only by default; optional notifications are the only server-assisted feature.",
 };
 
 export default function SettingsPage() {
@@ -23,13 +24,15 @@ export default function SettingsPage() {
                 </div>
                 <p className="text-muted-foreground max-w-xl">
                     Your data lives only in this browser (IndexedDB) — export, import
-                    or erase it — and nothing ever leaves your device.
+                    or erase it. Nothing leaves your device unless you explicitly
+                    enable the optional notification relay.
                 </p>
             </header>
 
             <main className="flex w-full max-w-2xl flex-col gap-4">
                 <StorageStatus/>
                 <ChartSettings/>
+                <NotificationSettings/>
                 <DataManagement/>
             </main>
         </div>

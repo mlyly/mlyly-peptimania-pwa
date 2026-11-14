@@ -1,8 +1,9 @@
 # Peptimania — Peptide & Medication Tracker
 
 A privacy-first, offline-capable Progressive Web App (PWA) for tracking medications, peptides, and supplements. **All
-data stays in your browser** — nothing is transmitted to external servers. Built with Next.js, React, Tailwind CSS,
-shadcn/ui, and Dexie (IndexedDB).
+data stays in your browser by default** — notifications are off unless you explicitly opt in, and the optional
+notification relay is the only possible exception. Built with Next.js, React, Tailwind CSS, shadcn/ui, and Dexie
+(IndexedDB).
 
 ## What It Does
 
@@ -70,7 +71,9 @@ Peptimania helps you manage your medication/peptide regimen with:
 
 ### Privacy & Offline-First
 
-- **Zero network dependencies** for user data - everything persists locally in your browser
+- **Zero network dependencies for user data** - everything persists locally in your browser
+- **Optional notifications** - dose reminders are off by default; enabling background delivery is the only feature that
+  shares a minimal data set with a relay (see [docs/notifications-plan.md](docs/notifications-plan.md))
 - **Fully offline capable** - works without internet after initial load
 - **Installable PWA** - can be installed on desktop/mobile for app-like experience
 - **Data sovereignty** - you control all data via export/import; no accounts or telemetry
@@ -156,8 +159,10 @@ lib/
 ├── pharmacokinetics/ # PK calculations
 ├── scheduling/       # Schedule/occurrence logic
 ├── measurements/     # Measurement handling
+├── notifications/    # Notification consent, capabilities, relay client
 └── settings/         # Settings management
 
+docs/                # Design plans (notifications relay, client delivery)
 public/               # Static assets, manifest, icons
 ```
 

@@ -20,7 +20,12 @@ export type SettingKey =
     | "pk.chartUnit"
     | "pk.hiddenMedicationIds"
     | "legal.termsAcceptedAt"
-    | "paging.pageSize";
+    | "paging.pageSize"
+    | "notifications.enabled"
+    | "notifications.consentAt"
+    | "notifications.consentVersion"
+    | "notifications.detailLevel"
+    | "notifications.leadMinutes";
 
 /** Selectable page sizes for paged lists; `"all"` disables pagination. */
 export type PageSize = 10 | 20 | 50 | 100 | "all";
@@ -31,6 +36,23 @@ export const PAGE_SIZES: readonly PageSize[] = [10, 20, 50, 100, "all"];
 export type PagedTableId = "doseLogs" | "measurements";
 
 const PAGED_TABLE_IDS: readonly string[] = ["doseLogs", "measurements"];
+
+/**
+ * How much reminder content a future push relay may carry:
+ *  - `generic`: only "A dose is due" — no medication names or doses.
+ *  - `detailed`: medication name, dose and time, end-to-end encrypted so the
+ *    relay cannot read it (see `docs/notifications-plan.md`).
+ */
+export type NotificationDetailLevel = "generic" | "detailed";
+
+export const NOTIFICATION_DETAIL_LEVELS: readonly NotificationDetailLevel[] = [
+    "generic",
+    "detailed",
+];
+
+/** Minutes before the scheduled time a reminder should fire. */
+export const NOTIFICATION_LEAD_MINUTES = [0, 5, 10, 15, 30, 60] as const;
+export type NotificationLeadMinutes = (typeof NOTIFICATION_LEAD_MINUTES)[number];
 
 export function pageSizeLabel(size: PageSize): string {
     return size === "all" ? "All" : `${size} / page`;
@@ -53,6 +75,27 @@ export interface AppSettings {
      * means the list uses its own default page size.
      */
     "paging.pageSize": Partial<Record<PagedTableId, PageSize>>;
+    /**
+     * Whether dose reminders are enabled on this device. This only becomes
+     * true after the user explicitly accepts the notification disclosure
+     * (see `notifications.consentAt`).
+     */
+    "notifications.enabled": boolean;
+    /**
+     * ISO timestamp of the user's consent to the notification data-sharing
+     * disclosure. `null` means never consented — the settings card requires
+     * the opt-in checkbox again before notifications can be enabled.
+     */
+    "notifications.consentAt": string | null;
+    /**
+     * Version of the notification disclosure the user accepted. A newer
+     * `NOTIFICATIONS_CONSENT_VERSION` invalidates older consents.
+     */
+    "notifications.consentVersion": string | null;
+    /** Content level requested for background push payloads. */
+    "notifications.detailLevel": NotificationDetailLevel;
+    /** How many minutes before the scheduled time a reminder fires. */
+    "notifications.leadMinutes": NotificationLeadMinutes;
 }
 
 const CHART_RANGE_IDS: readonly string[] = CHART_RANGES.map((range) => range.id);
@@ -64,6 +107,11 @@ export const DEFAULT_SETTINGS: AppSettings = {
     "pk.hiddenMedicationIds": [],
     "legal.termsAcceptedAt": null,
     "paging.pageSize": {},
+    "notifications.enabled": false,
+    "notifications.consentAt": null,
+    "notifications.consentVersion": null,
+    "notifications.detailLevel": "generic",
+    "notifications.leadMinutes": 0,
 };
 
 interface SettingDefinition<K extends SettingKey = SettingKey> {
@@ -126,6 +174,49 @@ const definitions: { [K in SettingKey]: SettingDefinition<K> } = {
             }
             return result;
         },
+    },
+    "notifications.enabled": {
+        key: "notifications.enabled",
+        description: "Dose reminders enabled on this device (after explicit consent)",
+        parse: (raw) =>
+            typeof raw === "boolean"
+                ? raw
+                : DEFAULT_SETTINGS["notifications.enabled"],
+    },
+    "notifications.consentAt": {
+        key: "notifications.consentAt",
+        description: "ISO timestamp of the notification data-sharing consent",
+        parse: (raw) => {
+            if (typeof raw !== "string") return null;
+            const time = Date.parse(raw);
+            return Number.isFinite(time) ? new Date(time).toISOString() : null;
+        },
+    },
+    "notifications.consentVersion": {
+        key: "notifications.consentVersion",
+        description: "Version of the notification disclosure the user accepted",
+        parse: (raw) =>
+            typeof raw === "string" && raw.trim() !== ""
+                ? raw.trim()
+                : DEFAULT_SETTINGS["notifications.consentVersion"],
+    },
+    "notifications.detailLevel": {
+        key: "notifications.detailLevel",
+        description: "Reminder content level for background push (generic/detailed)",
+        parse: (raw) =>
+            typeof raw === "string" &&
+            (NOTIFICATION_DETAIL_LEVELS as readonly string[]).includes(raw)
+                ? (raw as NotificationDetailLevel)
+                : DEFAULT_SETTINGS["notifications.detailLevel"],
+    },
+    "notifications.leadMinutes": {
+        key: "notifications.leadMinutes",
+        description: "Minutes before a scheduled dose that a reminder fires",
+        parse: (raw) =>
+            typeof raw === "number" &&
+            (NOTIFICATION_LEAD_MINUTES as readonly number[]).includes(raw)
+                ? (raw as NotificationLeadMinutes)
+                : DEFAULT_SETTINGS["notifications.leadMinutes"],
     },
 };
 

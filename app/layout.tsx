@@ -5,6 +5,7 @@ import "./globals.css";
 import {LAST_COMMIT_HASH, LAST_MODIFIED, LAST_MODIFIED_TIME} from "@/lib/app-info";
 import {OfflineFooterMarker} from "./offline-footer-marker";
 import {OfflineNotice} from "@/components/app/offline-notice";
+import {DoseReminderWatcher} from "@/components/notifications/dose-reminder-watcher";
 import {Toaster} from "@/components/ui/toaster";
 import {TermsGate} from "@/components/legal/terms-gate";
 import {ServiceWorkerRegister} from "@/components/pwa/service-worker-register";
@@ -109,6 +110,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         </div>
     </footer>
     <ServiceWorkerRegister/>
+    <DoseReminderWatcher/>
     <MobileZoomLock/>
     </body>
     </html>

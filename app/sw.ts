@@ -53,3 +53,100 @@ const serwist = new Serwist({
 });
 
 serwist.addEventListeners();
+
+// ---------------------------------------------------------------------------
+// Web Push display (background delivery) — see `docs/notifications-plan.md`.
+//
+// The relay sends a small, generic JSON payload; detailed payloads will be
+// end-to-end encrypted before they reach the relay, and the service worker
+// could decrypt them here with a key kept in IndexedDB. Until the relay is
+// deployed, these handlers are dormant: the on-device watcher in the app is
+// what shows reminders.
+// ---------------------------------------------------------------------------
+
+interface PushPayload {
+    title: string;
+    body: string;
+    tag: string;
+    url: string;
+}
+
+function readPushPayload(event: PushEvent): PushPayload {
+    let raw: unknown = null;
+    try {
+        raw = event.data?.json();
+    } catch {
+        // Fall through to the plain-text/fallback path.
+    }
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+        const text = event.data?.text();
+        return {
+            title: "Peptimania",
+            body: typeof text === "string" && text.trim() !== ""
+                ? text
+                : "A dose reminder is ready.",
+            tag: "peptimania-reminder",
+            url: "/",
+        };
+    }
+    const record = raw as Record<string, unknown>;
+    return {
+        title: typeof record.title === "string" ? record.title : "Peptimania",
+        body: typeof record.body === "string" ? record.body : "A dose reminder is ready.",
+        tag: typeof record.tag === "string" ? record.tag : "peptimania-reminder",
+        url: typeof record.url === "string" ? record.url : "/",
+    };
+}
+
+/** Only same-origin targets are allowed from notification data. */
+function notificationTargetUrl(raw: unknown): string {
+    if (typeof raw !== "string") return "/";
+    try {
+        const url = new URL(raw, self.location.origin);
+        if (url.origin !== self.location.origin) return "/";
+        return `${url.pathname}${url.search}${url.hash}`;
+    } catch {
+        return "/";
+    }
+}
+
+self.addEventListener("push", (event) => {
+    const payload = readPushPayload(event);
+    // `renotify` is part of the Notifications spec used by browsers, but is
+    // missing from this project's DOM lib version — keep it typed locally.
+    const options: NotificationOptions & { renotify?: boolean } = {
+        body: payload.body,
+        tag: payload.tag,
+        // Re-alert when a reminder is replaced (e.g. a retry with the same tag).
+        renotify: true,
+        icon: "/icons/icon-192.png",
+        badge: "/icons/icon-192.png",
+        data: {url: notificationTargetUrl(payload.url)},
+    };
+    event.waitUntil(self.registration.showNotification(payload.title, options));
+});
+
+self.addEventListener("notificationclick", (event) => {
+    event.notification.close();
+    const target = notificationTargetUrl(event.notification.data?.url);
+
+    event.waitUntil(
+        (async () => {
+            const windowClients = (await self.clients.matchAll({
+                type: "window",
+                includeUncontrolled: true,
+            })) as WindowClient[];
+
+            for (const client of windowClients) {
+                try {
+                    await client.navigate(target);
+                    return await client.focus();
+                } catch {
+                    // A client that cannot navigate (e.g. a closing tab) is
+                    // skipped; another open window or a new one will handle it.
+                }
+            }
+            return self.clients.openWindow(target);
+        })()
+    );
+});

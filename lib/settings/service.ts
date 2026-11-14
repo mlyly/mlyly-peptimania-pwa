@@ -40,10 +40,17 @@ export async function clearSetting(key: SettingKey): Promise<void> {
 
 /**
  * Removes every toggleable *feature* setting entry, restoring app defaults.
- * `legal.*` entries (e.g. the terms acceptance record) are deliberately not
- * reset — they are acknowledgements, not UI preferences.
+ * `legal.*` and notification-consent entries are deliberately not reset —
+ * they are acknowledgements, not UI preferences. (Resetting
+ * `notifications.enabled` to false does turn reminders off; the recorded
+ * consent remains valid until the disclosure version changes.)
  */
 export async function resetAllSettings(): Promise<void> {
-    const featureKeys = SETTING_KEYS.filter((key) => !key.startsWith("legal."));
+    const featureKeys = SETTING_KEYS.filter(
+        (key) =>
+            !key.startsWith("legal.") &&
+            key !== "notifications.consentAt" &&
+            key !== "notifications.consentVersion"
+    );
     await db.settings.bulkDelete(featureKeys);
 }
