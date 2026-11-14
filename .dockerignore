@@ -2,6 +2,7 @@ node_modules
 .next
 out
 .data
+.git
 .gitignore
 .idea
 .DS_Store

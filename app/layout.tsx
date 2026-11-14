@@ -2,7 +2,7 @@ import type {Metadata, Viewport} from "next";
 import {Geist, Geist_Mono} from "next/font/google";
 import "./globals.css";
 
-import {LAST_COMMIT_HASH, LAST_MODIFIED, LAST_MODIFIED_TIME} from "@/lib/app-info";
+import {LAST_MODIFIED, LAST_MODIFIED_TIME} from "@/lib/app-info";
 import {OfflineFooterMarker} from "./offline-footer-marker";
 import {OfflineNotice} from "@/components/app/offline-notice";
 import {DoseReminderWatcher} from "@/components/notifications/dose-reminder-watcher";
@@ -100,14 +100,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
             }}
         >
             <OfflineFooterMarker/>
-            {LAST_MODIFIED && (
-                <p
-                    className="text-muted-foreground whitespace-nowrap"
-                    title={LAST_COMMIT_HASH ? `Commit ${LAST_COMMIT_HASH}` : undefined}
-                >
-                    Last updated {LAST_MODIFIED} {LAST_MODIFIED_TIME}
-                </p>
-            )}
+            <p className="text-muted-foreground whitespace-nowrap">
+                Last updated {LAST_MODIFIED} {LAST_MODIFIED_TIME}
+            </p>
         </div>
     </footer>
     <ServiceWorkerRegister/>

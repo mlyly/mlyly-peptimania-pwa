@@ -1,6 +1,10 @@
 import type {NextConfig} from "next";
 
 const nextConfig: NextConfig = {
+    // Stamps the footer's "Last updated" date/time (see lib/app-info.ts).
+    env: {
+        APP_BUILD_TIME: new Date().toISOString(),
+    },
     // The app's user data still lives entirely in the browser. A server
     // runtime is required only for the optional Web Push relay (`/v1/*`), so
     // this is a normal Next.js server build rather than a static export.
