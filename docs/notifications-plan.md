@@ -44,15 +44,15 @@ Notifications are **off by default**. Turning them on is the only action that br
 
 ### 2.1 What the relay may receive
 
-| Data                                                  | Generic mode (default)      | Detailed mode                            |
-|-------------------------------------------------------|-----------------------------|------------------------------------------|
-| Push endpoint + `p256dh` / `auth` keys                | Yes                         | Yes                                      |
-| IANA time zone                                        | Yes                         | Yes                                      |
-| Reminder timestamps (`dueAt`)                         | Yes                         | Yes                                      |
-| IP address / request metadata                         | Yes (transport requirement) | Yes                                      |
-| Medication name, dose, unit                           | **No**                      | Only inside an end-to-end encrypted blob |
-| Dose history, inventory, measurements, notes, backups | **No**                      | **No**                                   |
-| Name, email, account identity                         | **No**                      | **No**                                   |
+| Data                                                                  | Generic mode (default)      | Detailed mode                            |
+|-----------------------------------------------------------------------|-----------------------------|------------------------------------------|
+| Push endpoint + `p256dh` / `auth` keys                                | Yes                         | Yes                                      |
+| IANA time zone                                                        | Yes                         | Yes                                      |
+| Reminder timestamps (`dueAt`) and occurrence keys (`scheduleId@date`) | Yes                         | Yes                                      |
+| IP address / request metadata                                         | Yes (transport requirement) | Yes                                      |
+| Medication name, dose, unit                                           | **No**                      | Only inside an end-to-end encrypted blob |
+| Dose history, inventory, measurements, notes, backups                 | **No**                      | **No**                                   |
+| Name, email, account identity                                         | **No**                      | **No**                                   |
 
 The relay must never log request bodies, endpoints, medication content or notification text.
 It may keep operational state (subscription present/revoked, reminder due/sent, attempt
@@ -80,6 +80,8 @@ counts) for the shortest period needed to operate the service.
 - Disabling notifications turns reminders off but keeps the consent record, so re-enabling
   does not require re-reading the disclosure. "Restore defaults" also preserves consent.
 - A future disclosure change requires a new checkbox acknowledgement.
+- The relay enforces the same version: a sync carrying a different `consent.version` is
+  rejected with `422 consent-outdated`, so a bump forces every device to re-consent.
 
 ---
 
@@ -166,7 +168,7 @@ create table reminders
     subscription_id    uuid        not null references push_subscriptions (id) on delete cascade,
     occurrence_key     text        not null,                   -- stable client key: scheduleId@YYYY-MM-DD
     due_at             timestamptz not null,
-    status     text not null default 'pending',                -- pending | sending | sent | failed | expired
+    status     text not null default 'pending',                -- pending | sending | sent | failed (expired rows are deleted, not marked)
     -- Generic mode: null (server builds the generic text).
     -- Detailed mode: opaque AES-GCM ciphertext; the relay cannot read it.
     payload_ciphertext text,
@@ -187,6 +189,8 @@ create index reminders_subscription_idx on reminders (subscription_id);
 Notes:
 
 - `endpoint` and keys are the minimum needed to call the push service.
+- The implementation also stores `lead_minutes` (the client's lead-time preference). The
+  `app_version` column is reserved; the client does not populate it. No medication data is stored.
 - No medication table, no dose log table, no measurement table.
 - `occurrence_key` gives idempotency: re-syncing the same day's reminder does not duplicate.
 - `expires_at` (30 days after the occurrence) lets a cron prune abandoned rows.
@@ -296,7 +300,8 @@ subscription.
 
 Revoke the token, delete reminder rows (cascade), and keep a tombstone so a repeated DELETE
 is idempotent. Return `204`. This is what "Turn off" and "wipe" call before unsubscribing
-the browser.
+the browser. A repeated DELETE with the original token also returns `204`. If the relay cannot be
+reached, the client queues the revocation locally and retries it on the next sync.
 
 ### `POST /v1/subscriptions/:id/test`
 
@@ -314,8 +319,10 @@ otherwise.
 Authorization: Bearer <token>
 ```
 
-Reject mismatched token hashes with `401`. Use constant-time comparison. Registration is
-rate-limited by IP; sync, test and delete by subscription/IP. Request bodies are capped at
+Reject mismatched token hashes with `401`. Use constant-time comparison. Every mutation is
+rate-limited by IP before authentication (`mutate-ip`), so unauthenticated floods are bounded too;
+sync, test and delete are also limited per subscription. The client IP is the last
+`X-Forwarded-For` hop added by the reverse proxy, never an earlier, client-supplied one. Request bodies are capped at
 1 MiB and validated with Zod. Mutation requests from an `Origin` other than the app's own
 must be allowlisted via `NOTIFICATIONS_ALLOWED_ORIGINS`.
 
@@ -358,8 +365,9 @@ boot to catch up after a restart. Each tick:
    transaction (single-writer claim + 5-minute lease).
 2. For each, calls `web-push.sendNotification` with the stored subscription and either the
    generic payload or the opaque encrypted payload.
-3. Marks `sent`, or schedules a retry with exponential backoff (max 5 attempts, then
-   `failed`), storing a content-free error code.
+3. Marks `sent`. Transient failures (network error, `429`, `5xx`) schedule a retry with
+   exponential backoff (max 5 attempts, then `failed`). Other `4xx` responses mark the row
+   `failed` immediately. A content-free error code is stored either way.
 4. On `404` / `410`, revokes the subscription and deletes its reminders.
 5. Periodically prunes expired/sent reminders (7 days) and revoked subscriptions (90 days).
 
@@ -562,9 +570,10 @@ The service worker:
 - Clicking a dose reminder lands on the notification centre and highlights the occurrence
   (`/notifications?focus=<occurrenceKey>`).
 
-`app/sw.ts` implements `push` (with detailed-payload decryption and generic fallback),
-`notificationclick` (same-origin focus/open) and `pushsubscriptionchange` (asks an open page
-to re-subscribe and re-sync).
+`app/sw.ts` implements `push` (detailed-payload decryption with generic fallback; skipped when a
+visible app window already shows the reminder, while test pushes always show),
+`notificationclick` (same-origin focus/open) and `pushsubscriptionchange` (re-registers the
+device from the last sync snapshot, then asks any open page to run a full sync).
 
 ---
 
@@ -575,9 +584,13 @@ to re-subscribe and re-sync).
 - `lib/notifications/consent.ts` — disclosure text, version, consent validation.
 - `lib/notifications/capabilities.ts` — support, permission, iOS/install detection.
 - `lib/notifications/relay.ts` — runtime config, push subscription lifecycle, horizon sync,
-  test push, status store and disable/unsubscribe.
+  test push, status store, disable/unsubscribe, retirement of rotated endpoints and retry of
+  queued revocations.
 - `lib/notifications/storage.ts` — non-exported IndexedDB (`peptimania-notifications`) for
-  relay credentials and the AES-GCM detail key.
+  relay credentials, the AES-GCM detail key, the sync snapshot used by the service worker and
+  the pending-revocation queue.
+- `lib/notifications/overrides.ts` — drops snooze/skip records for occurrences older than the
+  notification centre's window.
 - `lib/notifications/detail-crypto.ts` / `base64.ts` — AES-256-GCM encryption and base64url.
 - `lib/notifications/sync-events.ts` — dynamic, no-op-safe trigger used by domain services.
 - `components/notifications/notification-sync.tsx` — boot/visibility/online/subscription-
@@ -679,6 +692,10 @@ label, statuses use `role="alert"` for errors, and the enable button is a real u
 ## 11. Testing
 
 ### Unit / smoke (local)
+
+- `npx tsx scripts/notifications-smoke.ts` — relay contract: consent gate, snooze re-arming of a
+  delivered reminder, attempt counting, retry vs. permanent failure, idempotent DELETE, generic
+  payload contents, override retention and the 500-entry cap.
 
 - `hasCurrentNotificationConsent` version and timestamp behavior.
 - `getNotificationSupport` branches (unsupported, insecure, iOS not installed, denied).

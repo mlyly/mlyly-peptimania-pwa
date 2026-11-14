@@ -92,13 +92,29 @@ function base64UrlToBytes(value: string): Uint8Array {
     return bytes;
 }
 
-function readDetailKey(): Promise<CryptoKey | null> {
+const RELAY_CREDENTIALS_KEY = "relayCredentials";
+const SYNC_SNAPSHOT_KEY = "syncSnapshot";
+
+interface StoredCredentials {
+    subscriptionId: string;
+    token: string;
+    endpoint: string;
+}
+
+interface StoredSnapshot {
+    baseUrl: string;
+    vapidPublicKey: string;
+    body: Record<string, unknown> & { reminders?: { dueAt: string }[] };
+}
+
+/** Reads one value from the notification database; resolves `undefined` on any failure. */
+function kvGet<T>(key: string): Promise<T | undefined> {
     return new Promise((resolve) => {
         let request: IDBOpenDBRequest;
         try {
             request = indexedDB.open(NOTIFICATION_STORAGE_DB, 1);
         } catch {
-            resolve(null);
+            resolve(undefined);
             return;
         }
         request.onupgradeneeded = () => {
@@ -106,27 +122,123 @@ function readDetailKey(): Promise<CryptoKey | null> {
                 request.result.createObjectStore(NOTIFICATION_STORAGE_STORE);
             }
         };
-        request.onerror = () => resolve(null);
+        request.onerror = () => resolve(undefined);
         request.onsuccess = () => {
             const database = request.result;
             try {
                 const transaction = database.transaction(NOTIFICATION_STORAGE_STORE, "readonly");
-                const get = transaction.objectStore(NOTIFICATION_STORAGE_STORE).get(DETAIL_KEY_KEY);
+                const get = transaction.objectStore(NOTIFICATION_STORAGE_STORE).get(key);
                 get.onsuccess = () => {
-                    const value: unknown = get.result;
                     database.close();
-                    resolve(value instanceof CryptoKey ? value : null);
+                    resolve(get.result as T | undefined);
                 };
                 get.onerror = () => {
                     database.close();
-                    resolve(null);
+                    resolve(undefined);
                 };
             } catch {
                 database.close();
-                resolve(null);
+                resolve(undefined);
             }
         };
     });
+}
+
+function kvPut(key: string, value: unknown): Promise<void> {
+    return new Promise((resolve, reject) => {
+        const request = indexedDB.open(NOTIFICATION_STORAGE_DB, 1);
+        request.onupgradeneeded = () => {
+            if (!request.result.objectStoreNames.contains(NOTIFICATION_STORAGE_STORE)) {
+                request.result.createObjectStore(NOTIFICATION_STORAGE_STORE);
+            }
+        };
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => {
+            const database = request.result;
+            const transaction = database.transaction(NOTIFICATION_STORAGE_STORE, "readwrite");
+            transaction.objectStore(NOTIFICATION_STORAGE_STORE).put(value, key);
+            transaction.oncomplete = () => {
+                database.close();
+                resolve();
+            };
+            transaction.onerror = () => {
+                database.close();
+                reject(transaction.error);
+            };
+        };
+    });
+}
+
+async function readDetailKey(): Promise<CryptoKey | null> {
+    const value = await kvGet<unknown>(DETAIL_KEY_KEY);
+    return value instanceof CryptoKey ? value : null;
+}
+
+/**
+ * Re-registers this device after the browser rotated its push subscription,
+ * without waiting for the app to be opened. Uses the last sync snapshot; the
+ * app's next sync replaces the reminder horizon with a fresh one.
+ */
+async function renewSubscription(event: PushSubscriptionChangeEvent): Promise<boolean> {
+    const [snapshot, credentials] = await Promise.all([
+        kvGet<StoredSnapshot>(SYNC_SNAPSHOT_KEY),
+        kvGet<StoredCredentials>(RELAY_CREDENTIALS_KEY),
+    ]);
+    // Not connected (turned off, wiped or never synced): nothing to renew.
+    if (!snapshot || !credentials || typeof snapshot.baseUrl !== "string") return false;
+
+    const subscription =
+        event.newSubscription ??
+        (await self.registration.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: base64UrlToBytes(snapshot.vapidPublicKey) as BufferSource,
+        }));
+
+    // Drop reminders that already passed (the relay would ignore them anyway).
+    const cutoff = Date.now() - 15 * 60_000;
+    const reminders = (snapshot.body.reminders ?? []).filter(
+        (reminder) => Date.parse(reminder.dueAt) >= cutoff
+    );
+    const body = {...snapshot.body, subscription: subscription.toJSON(), reminders};
+
+    const response = await fetch(`${snapshot.baseUrl}/v1/subscriptions`, {
+        method: "POST",
+        headers: {"content-type": "application/json", accept: "application/json"},
+        body: JSON.stringify(body),
+    });
+    if (!response.ok) return false;
+
+    const created = (await response.json()) as { subscriptionId?: unknown; token?: unknown };
+    if (typeof created.subscriptionId !== "string" || typeof created.token !== "string") {
+        return false;
+    }
+    await kvPut(RELAY_CREDENTIALS_KEY, {
+        subscriptionId: created.subscriptionId,
+        token: created.token,
+        endpoint: subscription.endpoint,
+    } satisfies StoredCredentials);
+    await kvPut(SYNC_SNAPSHOT_KEY, {...snapshot, body} satisfies StoredSnapshot);
+
+    if (credentials.endpoint !== subscription.endpoint) {
+        // Retire the old row; the relay also drops it on the push service's 410.
+        await fetch(
+            `${snapshot.baseUrl}/v1/subscriptions/${encodeURIComponent(credentials.subscriptionId)}`,
+            {method: "DELETE", headers: {authorization: `Bearer ${credentials.token}`}}
+        ).catch(() => undefined);
+    }
+    return true;
+}
+
+async function anyVisibleWindow(): Promise<boolean> {
+    const windowClients = (await self.clients.matchAll({
+        type: "window",
+        includeUncontrolled: true,
+    })) as WindowClient[];
+    return windowClients.some((client) => client.visibilityState === "visible");
+}
+
+function isTestPush(raw: unknown): boolean {
+    return typeof raw === "object" && raw !== null && (raw as { type?: unknown }).type === "test";
 }
 
 function readEncryptedEnvelope(value: unknown): EncryptedEnvelope | null {
@@ -241,6 +353,9 @@ self.addEventListener("push", (event) => {
     const data = readPushData(event);
     event.waitUntil(
         (async () => {
+            // A visible app already shows the reminder as an in-app alert; a second
+            // system notification for the same dose would be a duplicate.
+            if (!isTestPush(data.raw) && (await anyVisibleWindow())) return;
             const payload = await resolvePushPayload(data);
             // `renotify` is part of the Notifications spec used by browsers,
             // but is missing from this project's DOM lib version — keep it
@@ -261,11 +376,16 @@ self.addEventListener("push", (event) => {
 });
 
 // A browser-generated subscription can be rotated independently of the app.
-// The page re-subscribes and re-syncs; without an open window the next app
-// boot does the same.
+// The worker re-registers from the last sync snapshot straight away, then tells
+// any open page to run a full sync (new horizon, fresh snapshot).
 self.addEventListener("pushsubscriptionchange", (event) => {
     event.waitUntil(
         (async () => {
+            try {
+                await renewSubscription(event);
+            } catch {
+                // The next app open re-syncs.
+            }
             const windowClients = (await self.clients.matchAll({
                 type: "window",
                 includeUncontrolled: true,

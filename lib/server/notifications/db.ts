@@ -326,7 +326,8 @@ export function markSubscriptionSeen(id: string): void {
  * - Existing pending/failed keys are refreshed (idempotent sync).
  * - Pending rows that are still in the future but no longer in the payload
  *   are deleted (a dose was logged, the schedule changed or paused).
- * - Already-sent rows are kept for delivery history/retention.
+ * - Already-sent rows stay sent while their due time is unchanged; a moved due
+ *   time (snooze) re-arms them so the new instant is delivered.
  */
 export function replaceReminders(
     subscriptionId: string,
@@ -369,9 +370,13 @@ export function replaceReminders(
                 payload_iv = excluded.payload_iv,
                 expires_at = excluded.expires_at,
                 status = CASE
-                    WHEN reminders.status = 'sent' THEN 'sent'
                     WHEN reminders.status = 'sending' THEN 'sending'
+                    WHEN reminders.status = 'sent' AND reminders.due_at = excluded.due_at THEN 'sent'
                     ELSE 'pending'
+                END,
+                sent_at = CASE
+                    WHEN reminders.status = 'sent' AND reminders.due_at = excluded.due_at THEN reminders.sent_at
+                    ELSE NULL
                 END,
                 retry_at = CASE WHEN reminders.status = 'sending' THEN reminders.retry_at ELSE NULL END,
                 claimed_at = CASE WHEN reminders.status = 'sending' THEN reminders.claimed_at ELSE NULL END,
@@ -470,7 +475,11 @@ export function claimDueReminders(
         for (const row of rows) {
             const id = text(row, "id");
             const result = claim.run(nowIso, id);
-            if (Number(result.changes) > 0) claimed.push(dueReminderFromRow(row));
+            if (Number(result.changes) > 0) {
+                const reminder = dueReminderFromRow(row);
+                // Report the attempt number of this claim so retry backoff grows per attempt.
+                claimed.push({...reminder, attempts: reminder.attempts + 1});
+            }
         }
 
         database.exec("COMMIT");
@@ -514,6 +523,28 @@ export function markReminderRetry(id: string, errorCode: string, retryAt: Date):
              WHERE id = ?`
         )
         .run(errorCode, retryAt.toISOString(), id);
+}
+
+/** Permanent failure (e.g. a rejected payload): no further retries. */
+export function markReminderFailed(id: string, errorCode: string): void {
+    openDatabase()
+        .prepare(
+            `UPDATE reminders
+             SET status = 'failed', claimed_at = NULL, last_error = ?, retry_at = NULL
+             WHERE id = ?`
+        )
+        .run(errorCode, id);
+}
+
+/**
+ * Token check that also accepts a revoked tombstone, so a repeated DELETE
+ * with the original token stays idempotent (204) instead of looking unauthorised.
+ */
+export function authenticateAnySubscription(id: string, token: string): boolean {
+    const row = openDatabase()
+        .prepare("SELECT token_hash FROM push_subscriptions WHERE id = ?")
+        .get(id);
+    return row ? tokenMatches(token, text(row, "token_hash")) : false;
 }
 
 export function revokeReminderSubscription(subscriptionId: string): void {

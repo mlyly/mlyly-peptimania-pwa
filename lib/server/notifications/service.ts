@@ -5,9 +5,11 @@
 import {randomUUID} from "node:crypto";
 
 import {getNotificationServerConfig} from "./config";
+import {NOTIFICATIONS_CONSENT_VERSION} from "../../notifications/consent";
 import {
     claimDueReminders,
     getSubscription,
+    markReminderFailed,
     markReminderRetry,
     markReminderSent,
     markSubscriptionSeen,
@@ -28,6 +30,7 @@ export type RelayErrorCode =
     | "invalid-reminders"
     | "endpoint-mismatch"
     | "subscription-not-found"
+    | "consent-outdated"
     | "push-failed";
 
 export class RelayError extends Error {
@@ -102,6 +105,16 @@ function sanitizeReminders(
     return reminders.slice(0, config.maxReminders);
 }
 
+/**
+ * The relay only accepts syncs that carry the current disclosure version, so
+ * bumping `NOTIFICATIONS_CONSENT_VERSION` forces every device to re-consent.
+ */
+function assertCurrentConsent(version: string): void {
+    if (version !== NOTIFICATIONS_CONSENT_VERSION) {
+        throw new RelayError("consent-outdated", 422, "Consent must be re-confirmed");
+    }
+}
+
 export function createSubscription(payload: CreateSubscriptionPayload): {
     subscriptionId: string;
     token: string;
@@ -109,6 +122,7 @@ export function createSubscription(payload: CreateSubscriptionPayload): {
     if (!pushIsConfigured()) {
         throw new RelayError("relay-not-configured", 503);
     }
+    assertCurrentConsent(payload.consent.version);
 
     const now = new Date();
     const reminders = sanitizeReminders(payload, now);
@@ -133,6 +147,7 @@ export function updateSubscription(id: string, payload: SyncPayload): void {
     if (payload.subscription && payload.subscription.endpoint !== existing.endpoint) {
         throw new RelayError("endpoint-mismatch", 409);
     }
+    assertCurrentConsent(payload.consent.version);
 
     const now = new Date();
     updateSubscriptionRow(id, {
@@ -165,6 +180,7 @@ export interface TickResult {
     claimed: number;
     sent: number;
     retried: number;
+    failed: number;
     revoked: number;
     pruned: number;
 }
@@ -180,6 +196,7 @@ export async function processDueReminders(limit = 100): Promise<TickResult> {
         claimed: due.length,
         sent: 0,
         retried: 0,
+        failed: 0,
         revoked: 0,
         pruned: 0,
     };
@@ -200,12 +217,15 @@ export async function processDueReminders(limit = 100): Promise<TickResult> {
         }
 
         const code = safePushError(response);
-        const delay =
-            response.reason === "retry"
-                ? retryDelayMs(reminder.attempts)
-                : Math.min(30 * 60_000, 60_000 * reminder.attempts);
-        markReminderRetry(reminder.id, code, new Date(sentAt.getTime() + delay));
-        result.retried += 1;
+        if (response.reason === "retry") {
+            // `attempts` already includes this claim (see claimDueReminders).
+            const delay = retryDelayMs(reminder.attempts);
+            markReminderRetry(reminder.id, code, new Date(sentAt.getTime() + delay));
+            result.retried += 1;
+        } else {
+            markReminderFailed(reminder.id, code);
+            result.failed += 1;
+        }
     }
 
     const pruned = pruneNotificationData(now);

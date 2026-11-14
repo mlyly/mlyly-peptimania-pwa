@@ -36,6 +36,8 @@ yarn-error.log*
 
 # notification relay SQLite database (local dev default)
 /.data/
+# relay database written to the repo root (e.g. NOTIFICATIONS_DB_PATH=notifications.sqlite)
+/notifications.sqlite*
 
 # generated service worker (created by `npm run build`)
 /public/sw.js

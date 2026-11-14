@@ -28,11 +28,15 @@ import {getNotificationSupport} from "./capabilities";
 import {hasCurrentNotificationConsent} from "./consent";
 import {encryptDetailedPayload, type EncryptedDetailPayload} from "./detail-crypto";
 import {
+    addPendingRevocation,
     clearNotificationSecrets,
     clearRelayCredentials,
+    getPendingRevocations,
     getRelayCredentials,
     type RelayCredentials,
+    removePendingRevocation,
     saveRelayCredentials,
+    saveSyncSnapshot,
 } from "./storage";
 
 const DAY_MS = 86_400_000;
@@ -389,6 +393,9 @@ function relayHttpError(status: number): Error {
         return new Error("The relay rejected this device's credentials.");
     }
     if (status === 413) return new Error("The reminder list is too large for the relay.");
+    if (status === 422) {
+        return new Error("The notification disclosure changed. Confirm it again in Settings.");
+    }
     if (status === 429) return new Error("Too many sync attempts. Try again in a minute.");
     if (status === 503) return new Error("Background delivery is not configured on the relay.");
     return new Error(`The relay request failed (HTTP ${status}).`);
@@ -445,6 +452,42 @@ async function putRelaySubscription(
     return "ok";
 }
 
+/**
+ * Best-effort DELETE of a relay subscription. Returns true when the relay no
+ * longer holds it (deleted, already revoked, or unknown); false when it could
+ * not be reached and the revocation must be retried later.
+ */
+async function deleteRelaySubscription(credentials: RelayCredentials): Promise<boolean> {
+    try {
+        const response = await fetch(
+            relayUrl(`/v1/subscriptions/${encodeURIComponent(credentials.subscriptionId)}`),
+            {
+                method: "DELETE",
+                headers: {authorization: `Bearer ${credentials.token}`},
+                signal: timeoutSignal(),
+            }
+        );
+        return response.ok || response.status === 401 || response.status === 404;
+    } catch {
+        return false;
+    }
+}
+
+/** Removes credentials that the relay no longer needs, or queues their revocation. */
+async function retireRelaySubscription(credentials: RelayCredentials): Promise<void> {
+    if (!(await deleteRelaySubscription(credentials))) {
+        await addPendingRevocation(credentials);
+    }
+}
+
+async function flushPendingRevocations(): Promise<void> {
+    for (const pending of await getPendingRevocations()) {
+        if (await deleteRelaySubscription(pending)) {
+            await removePendingRevocation(pending.subscriptionId);
+        }
+    }
+}
+
 function safeErrorMessage(error: unknown): string {
     if (error instanceof Error && error.message) {
         // Our own errors contain only status codes / generic text.
@@ -454,6 +497,14 @@ function safeErrorMessage(error: unknown): string {
 }
 
 async function doSync(): Promise<void> {
+    // Runs even when notifications are off: finishes revocations that an
+    // offline "Turn off" could not deliver.
+    try {
+        await flushPendingRevocations();
+    } catch {
+        // Retried on the next sync.
+    }
+
     let settings: AppSettings;
     try {
         settings = await loadSettings();
@@ -497,13 +548,32 @@ async function doSync(): Promise<void> {
         }
         const subscription = await ensurePushSubscription(config.vapidPublicKey);
         const body = await buildSyncBody(settings, config, subscription);
-        const credentials = await getRelayCredentials();
+        let credentials = await getRelayCredentials();
 
-        if (!credentials || credentials.endpoint !== subscription.endpoint) {
+        // The browser rotated the push endpoint: retire the old relay row so it
+        // stops holding reminders for an endpoint that no longer receives pushes.
+        if (credentials && credentials.endpoint !== subscription.endpoint) {
+            await retireRelaySubscription(credentials);
+            credentials = null;
+        }
+
+        if (!credentials) {
             await createRelaySubscription(body);
         } else {
             const result = await putRelaySubscription(credentials, body);
             if (result === "recreate") await createRelaySubscription(body);
+        }
+
+        try {
+            // Lets the service worker re-register this device if the browser
+            // rotates the subscription while no page is open.
+            await saveSyncSnapshot({
+                baseUrl: relayBaseUrl(),
+                vapidPublicKey: config.vapidPublicKey,
+                body: body as unknown as Record<string, unknown>,
+            });
+        } catch {
+            // Only affects automatic renewal; the next sync writes it again.
         }
 
         setStatus({
@@ -579,18 +649,8 @@ async function unsubscribeBrowser(): Promise<void> {
 export async function disableNotificationRelay(): Promise<void> {
     const credentials = await getRelayCredentials();
     if (credentials) {
-        try {
-            await fetch(
-                relayUrl(`/v1/subscriptions/${encodeURIComponent(credentials.subscriptionId)}`),
-                {
-                    method: "DELETE",
-                    headers: {authorization: `Bearer ${credentials.token}`},
-                    signal: timeoutSignal(),
-                }
-            );
-        } catch {
-            // Offline / relay down: local deletion still proceeds.
-        }
+        // Offline / relay down: the revocation is queued and retried on the next sync.
+        await retireRelaySubscription(credentials);
     }
     await unsubscribeBrowser();
     await clearNotificationSecrets();

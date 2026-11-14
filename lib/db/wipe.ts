@@ -12,6 +12,7 @@
  * confirm with the user first and reload the page afterwards.
  */
 
+import {closeNotificationStorage} from "../notifications/storage";
 import {DATABASE_NAME, db} from "./database";
 
 const DB_NAME_PREFIX = "peptimania";
@@ -56,6 +57,9 @@ export async function wipeAllLocalData(): Promise<WipeResult> {
     // Close our Dexie connection first so `deleteDatabase` isn't blocked by
     // an open handle (Dexie queues but an explicit close is deterministic).
     db?.close();
+    // The relay secrets database is opened by a cached handle; without closing it
+    // the delete below is blocked and would look like a success.
+    await closeNotificationStorage();
 
     // 1. IndexedDB
     const names = await listAppDatabases();
@@ -69,7 +73,8 @@ export async function wipeAllLocalData(): Promise<WipeResult> {
                         resolve();
                     };
                     request.onerror = () => reject(request.error);
-                    request.onblocked = () => resolve(); // best-effort: keep going
+                    // Still in use: report it as not deleted instead of silently succeeding.
+                    request.onblocked = () => reject(new Error(`${name} is still in use`));
                 });
             } catch {
                 // Non-fatal: the DB may not exist under this name.

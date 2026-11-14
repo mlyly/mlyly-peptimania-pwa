@@ -23,6 +23,7 @@ import type {Medication, Schedule} from "@/lib/db/types";
 import {isInjectableMedicationType} from "@/lib/medications/constants";
 import {hasCurrentNotificationConsent} from "@/lib/notifications";
 import {requestNotificationSync, useRelayStatus} from "@/lib/notifications/relay";
+import {pruneOverrides} from "@/lib/notifications/overrides";
 import {addDays, formatClockTime, formatRelativeDay} from "@/lib/scheduling/dates";
 import {recentInjectionSites} from "@/lib/scheduling/derived";
 import {type Occurrence, rangeAgenda} from "@/lib/scheduling/occurrences";
@@ -134,7 +135,7 @@ export function NotificationCentre() {
 
     const setOverride = React.useCallback(
         async (key: string, value: { snoozeUntil?: string; skippedAt?: string } | null) => {
-            const next = {...overrides};
+            const next = pruneOverrides({...overrides}, new Date());
             if (value) next[key] = value;
             else delete next[key];
             await setSetting("notifications.overrides", next);

@@ -22,13 +22,17 @@ function normalizedOrigin(value: string): string {
     return value.trim().replace(/\/$/, "");
 }
 
+/**
+ * The app's own origin. The `Host` header is what the public hostname is
+ * (the proxy preserves it); only the scheme is taken from the proxy's
+ * `X-Forwarded-Proto` because TLS terminates in front of the container.
+ */
 function requestOrigin(request: Request): string {
     const forwardedProto = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim();
-    const forwardedHost = request.headers.get("x-forwarded-host")?.split(",")[0]?.trim();
     try {
         const url = new URL(request.url);
         const protocol = forwardedProto || url.protocol.replace(":", "");
-        const host = forwardedHost || request.headers.get("host") || url.host;
+        const host = request.headers.get("host") || url.host;
         return `${protocol}://${host}`;
     } catch {
         return "";

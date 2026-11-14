@@ -5,7 +5,8 @@
  * opaque AES-GCM blob produced in the browser; the relay forwards it without
  * being able to decrypt it.
  */
-import webpush from "web-push";
+// `web-push` 4.x is a native ES module with named exports and no default export.
+import * as webpush from "web-push";
 
 import {getNotificationServerConfig} from "./config";
 import type {DueReminder, SubscriptionRow} from "./db";
@@ -107,7 +108,9 @@ function classify(error: unknown): PushSendResult {
     if (statusCode === 404 || statusCode === 410) {
         return {ok: false, statusCode, reason: "gone"};
     }
-    if (statusCode === 429 || (statusCode !== null && statusCode >= 500)) {
+    // Network errors (no status) and rate limits / server errors are transient.
+    // Other 4xx responses mean the payload or request will never succeed.
+    if (statusCode === null || statusCode === 429 || statusCode >= 500) {
         return {ok: false, statusCode, reason: "retry"};
     }
     return {ok: false, statusCode, reason: "failed"};
@@ -118,7 +121,7 @@ export async function sendPush(
     payload: PushPayload
 ): Promise<PushSendResult> {
     if (!ensureVapid().configured) {
-        return {ok: false, statusCode: null, reason: "failed"};
+        return {ok: false, statusCode: null, reason: "retry"};
     }
 
     try {

@@ -199,6 +199,22 @@ export function NotificationSettings() {
         }
     }
 
+    async function grantPermission(): Promise<void> {
+        setBusy("Requesting permission…");
+        try {
+            const permission = await requestNotificationPermission();
+            setSupport(getNotificationSupport());
+            if (permission === "granted") {
+                toast.success("Browser permission granted.");
+                requestNotificationSync({immediate: true});
+            } else {
+                toast.error("Notification permission was not granted.");
+            }
+        } finally {
+            setBusy(null);
+        }
+    }
+
     async function test(): Promise<void> {
         setBusy("Sending test…");
         try {
@@ -405,6 +421,26 @@ export function NotificationSettings() {
                                 {backgroundConnected ? " · background push connected" : ""}.
                             </span>
                         </div>
+
+                        {support.supported && support.permission === "default" && (
+                            <div
+                                className="flex flex-wrap items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-sm">
+                                <TriangleAlert className="size-4 shrink-0 text-amber-500" aria-hidden/>
+                                <span className="min-w-0 flex-1">
+                                    Reminders are on, but this device has not been allowed to
+                                    show notifications yet.
+                                </span>
+                                <Button
+                                    type="button"
+                                    size="sm"
+                                    className="h-8"
+                                    disabled={busy !== null}
+                                    onClick={() => void grantPermission()}
+                                >
+                                    Allow notifications
+                                </Button>
+                            </div>
+                        )}
 
                         <div className="grid gap-4 sm:grid-cols-2">
                             <div className="flex flex-col gap-1.5">

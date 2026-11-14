@@ -23,12 +23,22 @@ export function authenticate(
     return authenticateSubscription(subscriptionId, token);
 }
 
-/** Client IP for coarse rate limiting only — never logged or stored. */
+/**
+ * Client IP for coarse rate limiting only — never logged or stored.
+ *
+ * The reverse proxy appends the real peer address as the *last*
+ * `X-Forwarded-For` hop; earlier hops are supplied by the client and must not
+ * be trusted, otherwise a caller could rotate its rate-limit bucket at will.
+ */
 export function clientIp(request: Request): string {
     const forwarded = request.headers.get("x-forwarded-for");
     if (forwarded) {
-        const first = forwarded.split(",")[0]?.trim();
-        if (first) return first;
+        const last = forwarded
+            .split(",")
+            .map((hop) => hop.trim())
+            .filter(Boolean)
+            .pop();
+        if (last) return last;
     }
     return request.headers.get("x-real-ip")?.trim() || "unknown";
 }

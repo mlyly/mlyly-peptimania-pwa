@@ -254,20 +254,27 @@ const definitions: { [K in SettingKey]: SettingDefinition<K> } = {
         parse: (raw) => {
             const result: NotificationOverrides = {};
             if (!raw || typeof raw !== "object" || Array.isArray(raw)) return result;
-            let count = 0;
+            const entries: { key: string; override: NotificationOverride; at: number }[] = [];
             for (const [key, value] of Object.entries(raw)) {
-                if (count >= MAX_NOTIFICATION_OVERRIDES) break;
                 if (typeof key !== "string" || key.length === 0 || key.length > 300) continue;
                 if (!value || typeof value !== "object" || Array.isArray(value)) continue;
                 const record = value as Record<string, unknown>;
                 const snoozeUntil = parseIsoTimestamp(record.snoozeUntil);
                 const skippedAt = parseIsoTimestamp(record.skippedAt);
                 if (!snoozeUntil && !skippedAt) continue;
-                result[key] = {
-                    ...(snoozeUntil ? {snoozeUntil} : {}),
-                    ...(skippedAt ? {skippedAt} : {}),
-                };
-                count += 1;
+                entries.push({
+                    key,
+                    override: {
+                        ...(snoozeUntil ? {snoozeUntil} : {}),
+                        ...(skippedAt ? {skippedAt} : {}),
+                    },
+                    at: Date.parse(skippedAt ?? snoozeUntil ?? ""),
+                });
+            }
+            // Over the cap, keep the most recent actions (not the first inserted).
+            entries.sort((a, b) => b.at - a.at);
+            for (const entry of entries.slice(0, MAX_NOTIFICATION_OVERRIDES)) {
+                result[entry.key] = entry.override;
             }
             return result;
         },

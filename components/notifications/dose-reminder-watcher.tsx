@@ -59,6 +59,14 @@ function writeSentMap(map: SentMap): void {
     }
 }
 
+/**
+ * A snoozed occurrence gets a fresh dedupe slot so the delayed reminder can
+ * alert again.
+ */
+function dedupeKeyFor(key: string, override: { snoozeUntil?: string } | undefined): string {
+    return override?.snoozeUntil ? `${key}@${override.snoozeUntil}` : key;
+}
+
 async function showSystemNotification(
     title: string,
     body: string,
@@ -143,19 +151,15 @@ export function DoseReminderWatcher() {
                         }
                         return (
                             notifyAt <= now.getTime() &&
-                            Math.max(scheduledAt, notifyAt) >= now.getTime() - LATE_WINDOW_MS
+                            Math.max(scheduledAt, notifyAt) >= now.getTime() - LATE_WINDOW_MS &&
+                            // Already-shown reminders must not use up this tick's slots.
+                            !sent[dedupeKeyFor(occurrence.key, override)]
                         );
                     })
                     .slice(0, MAX_PER_TICK);
 
                 for (const occurrence of due) {
-                    const override = overrides[occurrence.key];
-                    // A snoozed occurrence gets a fresh dedupe slot so the
-                    // delayed reminder can alert again.
-                    const dedupeKey = override?.snoozeUntil
-                        ? `${occurrence.key}@${override.snoozeUntil}`
-                        : occurrence.key;
-                    if (sent[dedupeKey]) continue;
+                    const dedupeKey = dedupeKeyFor(occurrence.key, overrides[occurrence.key]);
                     sent[dedupeKey] = now.getTime();
                     changed = true;
 

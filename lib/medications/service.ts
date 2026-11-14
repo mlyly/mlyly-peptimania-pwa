@@ -8,6 +8,7 @@
  * medications page gates rendering on it, mirroring the settings page).
  */
 import {db, type InventoryLot, type Medication, type Schedule} from "@/lib/db";
+import {requestNotificationSync} from "@/lib/notifications/sync-events";
 import {inventoryLotInputSchema, type MedicationInput, medicationInputSchema,} from "./schema";
 
 function newId(): string {
@@ -107,6 +108,8 @@ export async function updateMedication(
         updatedAt: nowIso(),
     } as Medication;
     await db.medications.put(medication);
+    // A rename changes the encrypted detailed reminder text.
+    requestNotificationSync();
     return medication;
 }
 
@@ -126,17 +129,20 @@ export async function countLinkedRecords(id: string): Promise<LinkedRecordCounts
 
 /** Deletes a medication plus its schedules and dose logs, atomically. */
 export async function deleteMedication(id: string): Promise<LinkedRecordCounts> {
-    return db.transaction(
+    const counts = await db.transaction(
         "rw",
         [db.medications, db.schedules, db.doseLogs],
         async () => {
-            const counts = await countLinkedRecords(id);
+            const linked = await countLinkedRecords(id);
             await db.schedules.where("medicationId").equals(id).delete();
             await db.doseLogs.where("medicationId").equals(id).delete();
             await db.medications.delete(id);
-            return counts;
+            return linked;
         }
     );
+    // Drops the deleted medication's pending reminders from the relay.
+    requestNotificationSync({immediate: true});
+    return counts;
 }
 
 /**

@@ -14,9 +14,9 @@
  */
 import {z} from "zod";
 
-import {authenticate, clientIp} from "@/lib/server/notifications/auth";
+import {authenticate, bearerToken, clientIp} from "@/lib/server/notifications/auth";
 import {evaluateCors, preflightResponse} from "@/lib/server/notifications/cors";
-import {databaseIsHealthy} from "@/lib/server/notifications/db";
+import {authenticateAnySubscription, databaseIsHealthy} from "@/lib/server/notifications/db";
 import {consumeRateLimit, rateLimitResponse} from "@/lib/server/notifications/rate-limit";
 import {
     createSubscription,
@@ -150,6 +150,9 @@ async function handleCreate(request: Request): Promise<Response> {
 async function handleUpdate(request: Request, id: string): Promise<Response> {
     const cors = mutationCors(request);
     if (!cors.allowed) return json({error: "origin_not_allowed"}, 403);
+    // Limit per IP before authenticating so unauthenticated floods are bounded too.
+    const perIp = consumeRateLimit("mutate-ip", clientIp(request), 120, 60_000);
+    if (!perIp.allowed) return tooMany(perIp, cors.headers);
     if (!authenticate(request, id)) return json({error: "unauthorized"}, 401, cors.headers);
 
     const limited = consumeRateLimit("sync", id, 240, 60_000);
@@ -171,7 +174,13 @@ async function handleUpdate(request: Request, id: string): Promise<Response> {
 async function handleDelete(request: Request, id: string): Promise<Response> {
     const cors = mutationCors(request);
     if (!cors.allowed) return json({error: "origin_not_allowed"}, 403);
-    if (!authenticate(request, id)) return json({error: "unauthorized"}, 401, cors.headers);
+    const perIp = consumeRateLimit("mutate-ip", clientIp(request), 120, 60_000);
+    if (!perIp.allowed) return tooMany(perIp, cors.headers);
+    // Accepts a revoked tombstone too, so a repeated DELETE returns 204.
+    const token = bearerToken(request);
+    if (!token || !authenticateAnySubscription(id, token)) {
+        return json({error: "unauthorized"}, 401, cors.headers);
+    }
 
     try {
         deleteSubscription(id);
